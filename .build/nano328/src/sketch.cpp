@@ -4,7 +4,7 @@ void loop();
 void serialEvent();
 void HandleCommand(String cmd);
 void ISRHandler();
-void EZ6Interrupt();
+void KW9010ISR();
 int freeRam ();
 #line 1 "src/sketch.ino"
 #include "RCSwitch.h"
@@ -12,121 +12,103 @@ int freeRam ();
 #include <stdarg.h>
 
 #define SERIAL_BITRATE 9600
+
+
+#define SYNC 9500
+#define ONE 4500
+#define ZERO 2500
+#define GLITCH 200
+
+#define MESSAGELENGTH 36
+
+unsigned long LastPulseTime = 0;
+
+volatile bool SyncReceived = false;
+volatile unsigned long bitcount = 0;
+volatile bool message[MESSAGELENGTH + 1];
+
+
 String cmdstring;
 RCSwitch mySwitch = RCSwitch();
-boolean isTransmitting = false;
+bool isTransmitting = false;
 
-// Defines
-#define DataBits0 4                                       // Number of data0 bits to expect
-#define DataBits1 32                                      // Number of data1 bits to expect
-#define allDataBits 36                                    // Number of data sum 0+1 bits to expect
-// isrFlags bit numbers
-#define F_HAVE_DATA 1                                     // 0=Nothing in read buffer, 1=Data in read buffer
-#define F_GOOD_DATA 2                                     // 0=Unverified data, 1=Verified (2 consecutive matching reads)
-#define F_CARRY_BIT 3                                     // Bit used to carry over bit shift from one long to the other
-#define F_STATE 7                                         // 0=Sync mode, 1=Data mode
 
-// Constants
-const unsigned long sync_MIN = 4300;                      // Minimum Sync time in micro seconds
-const unsigned long sync_MAX = 4700;
 
-const unsigned long bit1_MIN = 2300;
-const unsigned long bit1_MAX = 2700;
-
-const unsigned long bit0_MIN = 1330;
-const unsigned long bit0_MAX = 1730;
-
-const unsigned long glitch_Length = 300;                  // Anything below this value is a glitch and will be ignored.
-
-// Interrupt variables
-unsigned long fall_Time = 0;                              // Placeholder for microsecond time when last falling edge occured.
-unsigned long rise_Time = 0;                              // Placeholder for microsecond time when last rising edge occured.
-byte bit_Count = 0;                                       // Bit counter for received bits.
-unsigned long build_Buffer[] = {
-  0,0};                     // Placeholder last data packet being received.
-volatile unsigned long read_Buffer[] = {
-  0,0};             // Placeholder last full data packet read.
-volatile byte isrFlags = 0;                               // Various flag bits
 
 void setup()
 {
   Serial.begin(SERIAL_BITRATE);
   pinMode(2,INPUT);
   pinMode(13,OUTPUT);
-  attachInterrupt(0,ISRHandler,CHANGE);
+  attachInterrupt(0,ISRHandler,FALLING);
 }
 
 void loop()
 {
   if (mySwitch.available()) {
 
-    int value = mySwitch.getReceivedValue();
+      int value = mySwitch.getReceivedValue();
 
-    if (value != 0) {
-      Serial.print(F("I"));
-      Serial.println(mySwitch.getReceivedValue());
-    }
+      if (value != 0) {
+        Serial.print(F("I"));
+        Serial.println(mySwitch.getReceivedValue());
+      }
 
-    mySwitch.resetAvailable();
+      mySwitch.resetAvailable();
   }
 
+  if (SyncReceived) {
+    // Sensor ID & Channel
+    uint8_t id = message[7] | message[6] << 1 | message[5] << 2 | message[4] << 3 | message[3] << 4 | message[2] << 5 | message[1] << 6 | message[0] << 7;
 
-  if (bitRead(isrFlags,F_GOOD_DATA) == 1) 
-  {
-	detachInterrupt(0);
-	
-    unsigned long myData0 = read_Buffer[0];                             // Read the data spread over 2x 32 variables
-    unsigned long myData1 = read_Buffer[1];
-    bitClear(isrFlags,F_HAVE_DATA);                       // Flag we have read the data
+    // (Propably) Battery State
+    bool battery = message[8];
 
-    byte BatteryInfo = (myData1 >> 26) & 0x3;             // Get Battery
-    byte RandomID = (myData1 >> 28) | (myData0 << 4);     // Get Random ID
-    byte Channel = ((myData1 >> 24) & 0x3) + 1;           // Get Channel
+    // Trend
+    uint8_t trend = message[9] << 1 | message[10];
 
-    byte ML = (myData1 >> 12) & 0xF0;                     // Get MMMM
-    byte H = (myData1 >> 12) & 0xF;                       // Get LLLL
-    ML = ML | H;                                          // OR MMMM & LLLL nibbles together
-    H = (myData1 >> 20) & 0xF;                            // Get HHHH
-    byte HH = 0;
-    if((myData1 >> 23) & 0x1 == 1)                        //23 bit
-    {
-      HH = 0xF;
-    }
-    int Temperature = (H << 8) | (HH << 12) | ML;           // Combine HHHH MMMMLLLL
+    // Trigger
+    bool forcedSend = message[11];
 
-    H = (myData1 >> 0) & 0xF0;                          // Get HHHH
-    ML = (myData1 >> 0) & 0xF;                            // Get LLLL
-    byte Humidity =  ML | H;                              // OR HHHH & LLLL nibbles together
-
-	
-	// Output the Result on Serial
-	char tmp[12];
-	sprintf(tmp,"E%02X%01d%01d%+04d%03d",RandomID,Channel,BatteryInfo,Temperature,Humidity);
-	Serial.println(tmp);
-	
+    // Temperature & Humidity
+    int temperature = ((message[23] << 11 | message[22] << 10 | message[21] << 9 | message[20] << 8 | message[19] << 7 | message[18] << 6 | message[17] << 5 | message[16] << 4 | message[15] << 3 | message[14] << 2 | message[13] << 1 | message[12]) << 4 ) >> 4;
+    uint8_t humidity = (message[31] << 7 | message[30] << 6 | message[29] << 5 | message[28] << 4 | message[27] << 3 | message[26] << 2 | message[25] << 1 | message[24]) - 156;
     
-	attachInterrupt(0,ISRHandler,CHANGE);
+    // check Data integrity
+    uint8_t checksum = (message[35] << 3 | message[34] << 2 | message[33] << 1 | message[32]);
+    uint8_t calculatedChecksum = 0;
+    for (int i = 0 ; i <= 7 ; i++) {
+      calculatedChecksum += (byte)(message[i*4 + 3] <<3 | message[i*4 + 2] << 2 | message[i*4 + 1] << 1 | message[i*4]);
+    }
+    calculatedChecksum &= 0xF;
+
+    if (calculatedChecksum == checksum) {
+      char tmp[11];
+      sprintf(tmp,"K%02X%01d%01d%01d%+04d%02d", id, battery, trend, forcedSend, temperature, humidity);
+      Serial.println(tmp);
+    }
+
+    SyncReceived = false;
+    bitcount = 0;
   }
-  delay(100);
-
-
+//delay(100);
 }
 
 void serialEvent()
 {
   while (Serial.available())
   {
-    char inChar = (char)Serial.read();
 
+    char inChar = (char)Serial.read();
     switch(inChar)
     {
-    case '\n':
-    case '\r':
-    case '\0':
-      HandleCommand(cmdstring);
-      break;
-    default:
-      cmdstring = cmdstring + inChar;
+      case '\n':
+      case '\r':
+      case '\0':
+        HandleCommand(cmdstring);
+        break;
+      default:
+        cmdstring = cmdstring + inChar;
     }
   }
 }
@@ -134,10 +116,18 @@ void serialEvent()
 void HandleCommand(String cmd)
 {
   // Version Information
-  if (cmd.equals("V") || cmd.equals("version"))
+  if (cmd.equals("V"))
   {
-    Serial.println(F("V 0.3 RFduino - compiled at " __DATE__ " " __TIME__));
+    Serial.println(F("V 0.4 RFduino - compiled at " __DATE__ " " __TIME__));
   }
+
+
+  // Print free Memory
+  else if (cmd.equals("R")) {
+      Serial.print(F("R"));
+      Serial.println(freeRam());
+  }
+
 
   // Switch Intertechno Devices
   else if (cmd.startsWith("is"))
@@ -149,155 +139,67 @@ void HandleCommand(String cmd)
     mySwitch.setProtocol(1);
     // Send it 8 times to make sure it gets transmitted
     mySwitch.setRepeatTransmit(8);
-	char msg[13];
-	cmd.substring(2).toCharArray(msg,13);
+    char msg[13];
+    cmd.substring(2).toCharArray(msg,13);
     mySwitch.sendTriState(msg);
     // Disable Transmitter
     mySwitch.disableTransmit();
 
-    attachInterrupt(0,ISRHandler,CHANGE);
+    attachInterrupt(0,ISRHandler,FALLING);
     digitalWrite(13,LOW);
-	Serial.println(cmd);
-  }
-  
-  // Print Available Commands
-  else if (cmd.equals("?"))
-  {
-    Serial.println(F("? Use one of V"));
+    Serial.println(cmd);
   }
   
 
+  // Print Available Commands
+  else if (cmd.equals("?"))
+  {
+    Serial.println(F("? Use one of V is R"));
+  }
+  
   cmdstring = "";
 }
 
 void ISRHandler()
 {
-    // Call RFSwitch Interrupt Handler
-    mySwitch.handleInterrupt();
-  
-    // Call EZ6 Interrupt Handler
-    EZ6Interrupt();
+  // Call RFSwitch Interrupt Handler
+  // mySwitch.handleInterrupt();
+
+  // Call KW9010 Interrupt
+  KW9010ISR();
 }
 
-void EZ6Interrupt()
-{
+void KW9010ISR() {
   unsigned long currentMicros = micros();
-
-  // Reset if an Overflow of micros() has occured since last rising edge
-  if (currentMicros < rise_Time)
-  {
-    rise_Time = currentMicros;
-    fall_Time = currentMicros;
-
-    build_Buffer[0] = 0;
-    build_Buffer[1]= 0;
-    read_Buffer[0] = 0;
-    read_Buffer[1] = 0;
-    isrFlags = 0;
-
+  
+  if (LastPulseTime > currentMicros) {
+    LastPulseTime = currentMicros;
     return;
   }
 
-  if (digitalRead(2) == LOW)
-  {
-    // Falling edge
-    if (currentMicros > (rise_Time + glitch_Length))
-    {
-      // Not a glitch
-      unsigned long pulseTime = currentMicros - fall_Time;                        // Subtract last falling edge to get pulse time.
-      if (bitRead(build_Buffer[1],31) == 1)
-      {
-        bitSet(isrFlags, F_CARRY_BIT);
-      }
-      else
-      {
-        bitClear(isrFlags, F_CARRY_BIT);
-      }
-
-      if (bitRead(isrFlags, F_STATE) == 1)
-      {
-        // Looking for Data
-        if ((pulseTime > bit0_MIN) && (pulseTime < bit0_MAX))
-        {
-          // 0 bit
-          build_Buffer[1] = build_Buffer[1] << 1;
-          build_Buffer[0] = build_Buffer[0] << 1;
-          if (bitRead(isrFlags,F_CARRY_BIT) == 1)
-          {
-            bitSet(build_Buffer[0],0);
-          }
-          bit_Count++;
-        }
-        else if ((pulseTime > bit1_MIN) && (pulseTime < bit1_MAX))
-        {
-          // 1 bit
-          build_Buffer[1] = build_Buffer[1] << 1;
-          bitSet(build_Buffer[1],0);
-          build_Buffer[0] = build_Buffer[0] << 1;
-          if (bitRead(isrFlags,F_CARRY_BIT) == 1)
-          {
-            bitSet(build_Buffer[0],0);
-          }
-          bit_Count++;
-        }
-        else
-        {
-          // Not a 0 or 1 bit so restart data build and check if it's a sync?
-          bit_Count = 0;
-          build_Buffer[0] = 0;
-          build_Buffer[1] = 0;
-          bitClear(isrFlags, F_GOOD_DATA);                // Signal data reads dont' match
-          bitClear(isrFlags, F_STATE);                    // Set looking for Sync mode
-          if ((pulseTime > sync_MIN) && (pulseTime < sync_MAX))
-          {
-            // Sync length okay
-            bitSet(isrFlags, F_STATE);                    // Set data mode
-          }
-        }
-        if (bit_Count >= allDataBits)
-        {
-          // All bits arrived
-          bitClear(isrFlags, F_GOOD_DATA);                // Assume data reads don't match
-          if (build_Buffer[0] == read_Buffer[0])
-          {
-            if (build_Buffer[1] == read_Buffer[1])
-            {
-              bitSet(isrFlags, F_GOOD_DATA);              // Set data reads match
-            }
-          }
-          read_Buffer[0] = build_Buffer[0];
-          read_Buffer[1] = build_Buffer[1];
-          bitSet(isrFlags, F_HAVE_DATA);                  // Set data available
-          bitClear(isrFlags, F_STATE);                    // Set looking for Sync mode
-          digitalWrite(13,HIGH); // Used for debugging
-          build_Buffer[0] = 0;
-          build_Buffer[1] = 0;
-          bit_Count = 0;
-        }
-      }
-      else
-      {
-        // Looking for sync
-        if ((pulseTime > sync_MIN) && (pulseTime < sync_MAX))
-        {
-          // Sync length okay
-          build_Buffer[0] = 0;
-          build_Buffer[1] = 0;
-          bit_Count = 0;
-          bitSet(isrFlags, F_STATE);                      // Set data mode
-          digitalWrite(13,LOW); // Used for debugging
-        }
-      }
-      fall_Time = currentMicros;                               // Store fall time
-    }
+  if (bitcount > 36) {
+    bitcount = 0;
   }
-  else
-  {
-    // Rising edge
-    if (currentMicros > (fall_Time + glitch_Length))
-    {
-      // Not a glitch
-      rise_Time = currentMicros;                                   // Store rise time
+  unsigned long duration = currentMicros - LastPulseTime;
+  LastPulseTime = currentMicros;
+  if ((duration > ZERO - GLITCH) && (duration < SYNC + GLITCH)) {
+    if ((duration > SYNC - GLITCH) && (duration < SYNC + GLITCH)) {
+      if (bitcount == MESSAGELENGTH) {
+          SyncReceived = true;
+      }
+      bitcount = 0;
+    }
+    if (!SyncReceived) {
+      if ((duration > ZERO - GLITCH) && (duration < ZERO + GLITCH)) {
+        // its a zero
+        message[bitcount] = false;
+        bitcount++;
+      }
+      else if ((duration > ONE - GLITCH) && (duration < ONE + GLITCH)) {
+        // its a one
+        message[bitcount] = true;
+        bitcount++;
+      }
     }
   }
 }
