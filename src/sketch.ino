@@ -74,7 +74,7 @@ void loop()
     calculatedChecksum &= 0xF;
 
     if (calculatedChecksum == checksum) {
-        if (temperature > -50 && temperature < 70) {
+        if (temperature > -500 && temperature < 700) {
             if (humidity > 0 && humidity < 100) {
                 char tmp[11];
                 sprintf(tmp,"K%02X%01d%01d%01d%+04d%02d", id, battery, trend, forcedSend, temperature, humidity);
