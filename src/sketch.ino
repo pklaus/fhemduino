@@ -1,94 +1,77 @@
-#include "RCSwitch.h"
-#include <stdio.h>
-#include <stdarg.h>
+#define MAX_CHANGES 75
+#define BAUDRATE 9600
+#define RECEIVETOLERANCE 60
 
-#define SERIAL_BITRATE 9600
-
-
-#define SYNC 9500
-#define ONE 4500
-#define ZERO 2500
-#define GLITCH 200
-
-#define MESSAGELENGTH 36
-
-unsigned long LastPulseTime = 0;
-
-volatile bool SyncReceived = false;
-volatile unsigned long bitcount = 0;
-volatile bool message[MESSAGELENGTH + 1];
-
-
+unsigned int timings[MAX_CHANGES];
 String cmdstring;
-RCSwitch mySwitch = RCSwitch();
-bool isTransmitting = false;
+volatile bool available = false;
+String message = "";
 
-
-
-
-void setup()
-{
-  Serial.begin(SERIAL_BITRATE);
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(BAUDRATE);
+  enableReceive();
   pinMode(2,INPUT);
-  pinMode(13,OUTPUT);
-  attachInterrupt(0,ISRHandler,FALLING);
+  pinMode(11,OUTPUT);
 }
 
-void loop()
-{
-  if (mySwitch.available()) {
-
-      int value = mySwitch.getReceivedValue();
-
-      if (value != 0) {
-        Serial.print(F("I"));
-        Serial.println(mySwitch.getReceivedValue());
-      }
-
-      mySwitch.resetAvailable();
+void loop() {
+  // put your main code here, to run repeatedly: 
+  if (messageAvailable()) {
+    Serial.println(message);
+    resetAvailable();
   }
+}
+/*
+ * Interrupt System
+ */
 
-  if (SyncReceived) {
-    // Sensor ID & Channel
-    uint8_t id = message[7] | message[6] << 1 | message[5] << 2 | message[4] << 3 | message[3] << 4 | message[2] << 5 | message[1] << 6 | message[0] << 7;
+void enableReceive() {
+  attachInterrupt(0,handleInterrupt,CHANGE);
+}
 
-    // (Propably) Battery State
-    bool battery = message[8];
+void disableReceive() {
+  detachInterrupt(0);
+}
 
-    // Trend
-    uint8_t trend = message[9] << 1 | message[10];
+void handleInterrupt() {
+  static unsigned int duration;
+  static unsigned int changeCount;
+  static unsigned long lastTime;
+  static unsigned int repeatCount;
 
-    // Trigger
-    bool forcedSend = message[11];
+  long time = micros();
+  duration = time - lastTime;
 
-    // Temperature & Humidity
-    int temperature = ((message[23] << 11 | message[22] << 10 | message[21] << 9 | message[20] << 8 | message[19] << 7 | message[18] << 6 | message[17] << 5 | message[16] << 4 | message[15] << 3 | message[14] << 2 | message[13] << 1 | message[12]) << 4 ) >> 4;
-    uint8_t humidity = (message[31] << 7 | message[30] << 6 | message[29] << 5 | message[28] << 4 | message[27] << 3 | message[26] << 2 | message[25] << 1 | message[24]) - 156;
-    
-    // check Data integrity
-    uint8_t checksum = (message[35] << 3 | message[34] << 2 | message[33] << 1 | message[32]);
-    uint8_t calculatedChecksum = 0;
-    for (int i = 0 ; i <= 7 ; i++) {
-      calculatedChecksum += (byte)(message[i*4 + 3] <<3 | message[i*4 + 2] << 2 | message[i*4 + 1] << 1 | message[i*4]);
-    }
-    calculatedChecksum &= 0xF;
-
-    if (calculatedChecksum == checksum) {
-        if (temperature > -500 && temperature < 700) {
-            if (humidity > 0 && humidity < 100) {
-                char tmp[11];
-                sprintf(tmp,"K%02X%01d%01d%01d%+04d%02d", id, battery, trend, forcedSend, temperature, humidity);
-                Serial.println(tmp);
-            }
+  if (duration > 5000 && duration > timings[0] - 200 && duration < timings[0] + 200) {
+    repeatCount++;
+    changeCount--;
+    if (repeatCount == 2) {
+      if (receiveProtocolKW9010(changeCount) == false) {
+        if (receiveProtocolPT2262(changeCount) == false) {
+          // failed;
         }
+      }
+      repeatCount = 0;
     }
-
-    SyncReceived = false;
-    bitcount = 0;
+    changeCount = 0;
+  } 
+  else if (duration > 5000) {
+    changeCount = 0;
   }
-//delay(100);
+
+  if (changeCount >= MAX_CHANGES) {
+    changeCount = 0;
+    repeatCount = 0;
+  }
+  timings[changeCount++] = duration;
+  lastTime = time;  
 }
 
+
+/*
+ * Serial Command Handling
+ */
 void serialEvent()
 {
   while (Serial.available())
@@ -97,13 +80,13 @@ void serialEvent()
     char inChar = (char)Serial.read();
     switch(inChar)
     {
-      case '\n':
-      case '\r':
-      case '\0':
-        HandleCommand(cmdstring);
-        break;
-      default:
-        cmdstring = cmdstring + inChar;
+    case '\n':
+    case '\r':
+    case '\0':
+      HandleCommand(cmdstring);
+      break;
+    default:
+      cmdstring = cmdstring + inChar;
     }
   }
 }
@@ -113,14 +96,14 @@ void HandleCommand(String cmd)
   // Version Information
   if (cmd.equals("V"))
   {
-    Serial.println(F("V 0.4 RFduino - compiled at " __DATE__ " " __TIME__));
+    Serial.println(F("V 1.0b1 FHEMduino - compiled at " __DATE__ " " __TIME__));
   }
 
 
   // Print free Memory
   else if (cmd.equals("R")) {
-      Serial.print(F("R"));
-      Serial.println(freeRam());
+    Serial.print(F("R"));
+    Serial.println(freeRam());
   }
 
 
@@ -128,80 +111,208 @@ void HandleCommand(String cmd)
   else if (cmd.startsWith("is"))
   {
     digitalWrite(13,HIGH);
-    detachInterrupt(0);
 
-    mySwitch.enableTransmit(11);
-    mySwitch.setProtocol(1);
-    // Send it 8 times to make sure it gets transmitted
-    mySwitch.setRepeatTransmit(8);
+
     char msg[13];
     cmd.substring(2).toCharArray(msg,13);
-    mySwitch.sendTriState(msg);
-    // Disable Transmitter
-    mySwitch.disableTransmit();
-
-    attachInterrupt(0,ISRHandler,FALLING);
+    sendPT2262(msg);
     digitalWrite(13,LOW);
     Serial.println(cmd);
   }
-  
+  else if (cmd.equals("XQ")) {
+    disableReceive();
+    Serial.flush();
+    Serial.end();
+  }
+
 
   // Print Available Commands
   else if (cmd.equals("?"))
   {
-    Serial.println(F("? Use one of V is R"));
+    Serial.println(F("? Use one of V is R q"));
   }
-  
+
   cmdstring = "";
 }
 
-void ISRHandler()
-{
-  // Call RFSwitch Interrupt Handler
-  // mySwitch.handleInterrupt();
 
-  // Call KW9010 Interrupt
-  KW9010ISR();
-}
-
-void KW9010ISR() {
-  unsigned long currentMicros = micros();
-  
-  if (LastPulseTime > currentMicros) {
-    LastPulseTime = currentMicros;
-    return;
-  }
-
-  if (bitcount > 36) {
-    bitcount = 0;
-  }
-  unsigned long duration = currentMicros - LastPulseTime;
-  LastPulseTime = currentMicros;
-  if ((duration > ZERO - GLITCH) && (duration < SYNC + GLITCH)) {
-    if ((duration > SYNC - GLITCH) && (duration < SYNC + GLITCH)) {
-      if (bitcount == MESSAGELENGTH) {
-          SyncReceived = true;
-      }
-      bitcount = 0;
-    }
-    if (!SyncReceived) {
-      if ((duration > ZERO - GLITCH) && (duration < ZERO + GLITCH)) {
-        // its a zero
-        message[bitcount] = false;
-        bitcount++;
-      }
-      else if ((duration > ONE - GLITCH) && (duration < ONE + GLITCH)) {
-        // its a one
-        message[bitcount] = true;
-        bitcount++;
-      }
-    }
-  }
-}
 
 // Get free RAM of UC
 int freeRam () {
   extern int __heap_start, *__brkval; 
   int v; 
   return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
+}
+
+/*
+ * Message Handling
+ */
+bool messageAvailable() {
+  return (available && (message.length() > 0));
+}
+
+void resetAvailable() {
+  available = false;
+  message = "";
+}
+
+/*
+ * KW9010
+ */
+
+bool receiveProtocolKW9010(unsigned int changeCount) {
+
+#define KW9010_SYNC 9000
+#define KW9010_ONE 4000
+#define KW9010_ZERO 2000
+#define KW9010_GLITCH 200
+#define KW9010_MESSAGELENGTH 36
+
+  if (changeCount < KW9010_MESSAGELENGTH * 2) {
+    return false;
+  }
+
+  bool bitmessage[KW9010_MESSAGELENGTH + 1];
+  int bitcount = 0;
+
+  if ((timings[0] < KW9010_SYNC - KW9010_GLITCH) || (timings[0] > KW9010_SYNC + KW9010_GLITCH)) {
+    return false;
+  }
+  //Serial.println(changeCount);
+  for (int i = 2; i < changeCount; i=i+2) {
+    if ((timings[i] > KW9010_ZERO - KW9010_GLITCH) && (timings[i] < KW9010_ZERO + KW9010_GLITCH)) {
+      // its a zero
+      bitmessage[bitcount] = false;
+      bitcount++;
+    }
+    else if ((timings[i] > KW9010_ONE - KW9010_GLITCH) && (timings[i] < KW9010_ONE + KW9010_GLITCH)) {
+      // its a one
+      bitmessage[bitcount] = true;
+      bitcount++;
+    }
+    else {
+      return false;
+    }
+  }
+
+  // Sensor ID & Channel
+  byte id = bitmessage[7] | bitmessage[6] << 1 | bitmessage[5] << 2 | bitmessage[4] << 3 | bitmessage[3] << 4 | bitmessage[2] << 5 | bitmessage[1] << 6 | bitmessage[0] << 7;
+
+  // (Propably) Battery State
+  bool battery = bitmessage[8];
+
+  // Trend
+  byte trend = bitmessage[9] << 1 | bitmessage[10];
+
+  // Trigger
+  bool forcedSend = bitmessage[11];
+
+  // Temperature & Humidity
+  int temperature = ((bitmessage[23] << 11 | bitmessage[22] << 10 | bitmessage[21] << 9 | bitmessage[20] << 8 | bitmessage[19] << 7 | bitmessage[18] << 6 | bitmessage[17] << 5 | bitmessage[16] << 4 | bitmessage[15] << 3 | bitmessage[14] << 2 | bitmessage[13] << 1 | bitmessage[12]) << 4 ) >> 4;
+  byte humidity = (bitmessage[31] << 7 | bitmessage[30] << 6 | bitmessage[29] << 5 | bitmessage[28] << 4 | bitmessage[27] << 3 | bitmessage[26] << 2 | bitmessage[25] << 1 | bitmessage[24]) - 156;
+
+  // check Data integrity
+  byte checksum = (bitmessage[35] << 3 | bitmessage[34] << 2 | bitmessage[33] << 1 | bitmessage[32]);
+  byte calculatedChecksum = 0;
+
+  for (int i = 0 ; i <= 7 ; i++) {
+    calculatedChecksum += (byte)(bitmessage[i*4 + 3] <<3 | bitmessage[i*4 + 2] << 2 | bitmessage[i*4 + 1] << 1 | bitmessage[i*4]);
+  }
+  calculatedChecksum &= 0xF;
+
+  if (calculatedChecksum == checksum) {
+    if (temperature > -500 && temperature < 700) {
+      if (humidity > 0 && humidity < 100) {
+        char tmp[11];
+        sprintf(tmp,"K%02X%01d%01d%01d%+04d%02d", id, battery, trend, forcedSend, temperature, humidity);
+        //Serial.println(tmp);
+        message = tmp;
+        available = true;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+
+
+/*
+ * PT2262 Stuff
+ */
+bool receiveProtocolPT2262(unsigned int changeCount) {
+  message = "IR";
+  if (changeCount != 49) {
+    return false;
+  }
+  unsigned long code = 0;
+  unsigned long delay = timings[0] / 31;
+  unsigned long delayTolerance = delay * RECEIVETOLERANCE * 0.01; 
+
+  for (int i = 1; i < changeCount; i=i+2) {
+    if (timings[i] > delay-delayTolerance && timings[i] < delay+delayTolerance && timings[i+1] > delay*3-delayTolerance && timings[i+1] < delay*3+delayTolerance) {
+      code = code << 1;
+    }
+    else if (timings[i] > delay*3-delayTolerance && timings[i] < delay*3+delayTolerance && timings[i+1] > delay-delayTolerance && timings[i+1] < delay+delayTolerance)  { 
+      code += 1;
+      code = code << 1;
+    }
+    else {
+      code = 0;
+      i = changeCount;
+      return false;
+    }
+  }
+  code = code >> 1;
+  message += code;
+  available = true;
+  return true;
+}
+
+void sendPT2262(char* triStateMessage) {
+  for (int i = 0; i < 3; i++) {
+    unsigned int pos = 0;
+    while (triStateMessage[pos] != '\0') {
+      switch(triStateMessage[pos]) {
+      case '0':
+        PT2262_sendT0();
+        break;
+      case 'F':
+        PT2262_sendTF();
+        break;
+      case '1':
+        PT2262_sendT1();
+        break;
+      }
+      pos++;
+    }
+    sendSync();    
+  }
+}
+
+void PT2262_sendT0() {
+  PT2262_transmit(1,3);
+  PT2262_transmit(1,3);
+}
+void PT2262_sendT1() {
+  PT2262_transmit(3,1);
+  PT2262_transmit(3,1);
+}
+
+void PT2262_sendTF() {
+  PT2262_transmit(1,3);
+  PT2262_transmit(3,1);
+}
+
+void PT2262_sendSync() {
+  PT2262_transmit(1,31);
+}
+
+void PT2262_transmit(int nHighPulses, int nLowPulses) {
+  disableReceive();
+  digitalWrite(11, HIGH);
+  delayMicroseconds(350 * nHighPulses);
+  digitalWrite(11, LOW);
+  delayMicroseconds(350 * nLowPulses);
+  enableReceive();
 }
