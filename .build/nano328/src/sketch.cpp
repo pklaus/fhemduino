@@ -7,16 +7,16 @@ void handleInterrupt();
 void serialEvent();
 void HandleCommand(String cmd);
 int freeRam ();
-boolean messageAvailable();
+bool messageAvailable();
 void resetAvailable();
-boolean receiveProtocolKW9010(unsigned int changeCount);
-boolean receiveProtocolPT2262(unsigned int changeCount);
-void sendPT2262(char* sCodeWord);
-void sendT0();
-void sendT1();
-void sendTF();
-void sendSync();
-void transmit(int nHighPulses, int nLowPulses);
+bool receiveProtocolKW9010(unsigned int changeCount);
+bool receiveProtocolPT2262(unsigned int changeCount);
+void sendPT2262(char* triStateMessage);
+void PT2262_sendT0();
+void PT2262_sendT1();
+void PT2262_sendTF();
+void PT2262_sendSync();
+void PT2262_transmit(int nHighPulses, int nLowPulses);
 #line 1 "src/sketch.ino"
 #define MAX_CHANGES 75
 #define BAUDRATE 9600
@@ -24,7 +24,7 @@ void transmit(int nHighPulses, int nLowPulses);
 
 unsigned int timings[MAX_CHANGES];
 String cmdstring;
-volatile boolean available = false;
+volatile bool available = false;
 String message = "";
 
 void setup() {
@@ -53,6 +53,7 @@ void enableReceive() {
 void disableReceive() {
   detachInterrupt(0);
 }
+
 void handleInterrupt() {
   static unsigned int duration;
   static unsigned int changeCount;
@@ -86,6 +87,7 @@ void handleInterrupt() {
   timings[changeCount++] = duration;
   lastTime = time;  
 }
+
 
 /*
  * Serial Command Handling
@@ -138,6 +140,7 @@ void HandleCommand(String cmd)
     Serial.println(cmd);
   }
   else if (cmd.equals("XQ")) {
+    disableReceive();
     Serial.flush();
     Serial.end();
   }
@@ -164,7 +167,7 @@ int freeRam () {
 /*
  * Message Handling
  */
-boolean messageAvailable() {
+bool messageAvailable() {
   return (available && (message.length() > 0));
 }
 
@@ -177,7 +180,7 @@ void resetAvailable() {
  * KW9010
  */
 
-boolean receiveProtocolKW9010(unsigned int changeCount) {
+bool receiveProtocolKW9010(unsigned int changeCount) {
 
 #define KW9010_SYNC 9000
 #define KW9010_ONE 4000
@@ -189,7 +192,7 @@ boolean receiveProtocolKW9010(unsigned int changeCount) {
     return false;
   }
 
-  boolean bitmessage[KW9010_MESSAGELENGTH + 1];
+  bool bitmessage[KW9010_MESSAGELENGTH + 1];
   int bitcount = 0;
 
   if ((timings[0] < KW9010_SYNC - KW9010_GLITCH) || (timings[0] > KW9010_SYNC + KW9010_GLITCH)) {
@@ -216,13 +219,13 @@ boolean receiveProtocolKW9010(unsigned int changeCount) {
   byte id = bitmessage[7] | bitmessage[6] << 1 | bitmessage[5] << 2 | bitmessage[4] << 3 | bitmessage[3] << 4 | bitmessage[2] << 5 | bitmessage[1] << 6 | bitmessage[0] << 7;
 
   // (Propably) Battery State
-  boolean battery = bitmessage[8];
+  bool battery = bitmessage[8];
 
   // Trend
   byte trend = bitmessage[9] << 1 | bitmessage[10];
 
   // Trigger
-  boolean forcedSend = bitmessage[11];
+  bool forcedSend = bitmessage[11];
 
   // Temperature & Humidity
   int temperature = ((bitmessage[23] << 11 | bitmessage[22] << 10 | bitmessage[21] << 9 | bitmessage[20] << 8 | bitmessage[19] << 7 | bitmessage[18] << 6 | bitmessage[17] << 5 | bitmessage[16] << 4 | bitmessage[15] << 3 | bitmessage[14] << 2 | bitmessage[13] << 1 | bitmessage[12]) << 4 ) >> 4;
@@ -257,7 +260,7 @@ boolean receiveProtocolKW9010(unsigned int changeCount) {
 /*
  * PT2262 Stuff
  */
-boolean receiveProtocolPT2262(unsigned int changeCount) {
+bool receiveProtocolPT2262(unsigned int changeCount) {
   message = "IR";
   if (changeCount != 49) {
     return false;
@@ -286,46 +289,46 @@ boolean receiveProtocolPT2262(unsigned int changeCount) {
   return true;
 }
 
-void sendPT2262(char* sCodeWord) {
-  for (int nRepeat=0; nRepeat < 3; nRepeat++) {
-    int i = 0;
-    while (sCodeWord[i] != '\0') {
-      switch(sCodeWord[i]) {
+void sendPT2262(char* triStateMessage) {
+  for (int i = 0; i < 3; i++) {
+    unsigned int pos = 0;
+    while (triStateMessage[pos] != '\0') {
+      switch(triStateMessage[pos]) {
       case '0':
-        sendT0();
+        PT2262_sendT0();
         break;
       case 'F':
-        sendTF();
+        PT2262_sendTF();
         break;
       case '1':
-        sendT1();
+        PT2262_sendT1();
         break;
       }
-      i++;
+      pos++;
     }
-    sendSync();    
+    PT2262_sendSync();    
   }
 }
 
-void sendT0() {
-  transmit(1,3);
-  transmit(1,3);
+void PT2262_sendT0() {
+  PT2262_transmit(1,3);
+  PT2262_transmit(1,3);
 }
-void sendT1() {
-  transmit(3,1);
-  transmit(3,1);
-}
-
-void sendTF() {
-  transmit(1,3);
-  transmit(3,1);
+void PT2262_sendT1() {
+  PT2262_transmit(3,1);
+  PT2262_transmit(3,1);
 }
 
-void sendSync() {
-  transmit(1,31);
+void PT2262_sendTF() {
+  PT2262_transmit(1,3);
+  PT2262_transmit(3,1);
 }
 
-void transmit(int nHighPulses, int nLowPulses) {
+void PT2262_sendSync() {
+  PT2262_transmit(1,31);
+}
+
+void PT2262_transmit(int nHighPulses, int nLowPulses) {
   disableReceive();
   digitalWrite(11, HIGH);
   delayMicroseconds(350 * nHighPulses);

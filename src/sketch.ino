@@ -286,7 +286,7 @@ void sendPT2262(char* triStateMessage) {
       }
       pos++;
     }
-    sendSync();    
+    PT2262_sendSync();    
   }
 }
 
