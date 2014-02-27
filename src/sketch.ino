@@ -1,6 +1,13 @@
 #define MAX_CHANGES 75
 #define BAUDRATE 9600
 #define RECEIVETOLERANCE 60
+#define PIN_LED 13
+#define PIN_SEND 11
+#if defined(__AVR_ATmega32U4__) //on the leonardo and other ATmega32U4 devices interrupt 0 is on dpin 3
+#define PIN_RECEIVE 3
+#else
+#define PIN_RECEIVE 2
+#endif
 
 unsigned int timings[MAX_CHANGES];
 String cmdstring;
@@ -11,8 +18,8 @@ void setup() {
   // put your setup code here, to run once:
   Serial.begin(BAUDRATE);
   enableReceive();
-  pinMode(2,INPUT);
-  pinMode(11,OUTPUT);
+  pinMode(PIN_RECEIVE,INPUT);
+  pinMode(PIN_SEND,OUTPUT);
 }
 
 void loop() {
@@ -21,6 +28,12 @@ void loop() {
     Serial.println(message);
     resetAvailable();
   }
+//serialEvent does not work on ATmega32U4 devices like the Leonardo, so we do the handling ourselves
+#if defined(__AVR_ATmega32U4__)
+  if (Serial.available()) {
+    serialEvent();
+  }
+#endif
 }
 /*
  * Interrupt System
@@ -110,13 +123,13 @@ void HandleCommand(String cmd)
   // Switch Intertechno Devices
   else if (cmd.startsWith("is"))
   {
-    digitalWrite(13,HIGH);
+    digitalWrite(PIN_LED,HIGH);
 
 
     char msg[13];
     cmd.substring(2).toCharArray(msg,13);
     sendPT2262(msg);
-    digitalWrite(13,LOW);
+    digitalWrite(PIN_LED,LOW);
     Serial.println(cmd);
   }
   else if (cmd.equals("XQ")) {
@@ -310,9 +323,10 @@ void PT2262_sendSync() {
 
 void PT2262_transmit(int nHighPulses, int nLowPulses) {
   disableReceive();
-  digitalWrite(11, HIGH);
+  digitalWrite(PIN_SEND, HIGH);
   delayMicroseconds(350 * nHighPulses);
-  digitalWrite(11, LOW);
+  digitalWrite(PIN_SEND, LOW);
   delayMicroseconds(350 * nLowPulses);
   enableReceive();
 }
+
