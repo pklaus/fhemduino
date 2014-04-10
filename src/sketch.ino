@@ -62,7 +62,9 @@ void handleInterrupt() {
     if (repeatCount == 2) {
       if (receiveProtocolKW9010(changeCount) == false) {
         if (receiveProtocolPT2262(changeCount) == false) {
-          // failed;
+          if (receiveProtocolNC7159(changeCount) == false) {
+            // failed
+          }
         }
       }
       repeatCount = 0;
@@ -278,6 +280,74 @@ bool receiveProtocolPT2262(unsigned int changeCount) {
   }
   code = code >> 1;
   message += code;
+  available = true;
+  return true;
+}
+
+/*
+ * NC7159
+ */
+
+bool receiveProtocolNC7159(unsigned int changeCount) {
+
+#define NC7159_SYNC   9000
+#define NC7159_ONE    3750
+#define NC7159_ZERO   1800
+#define NC7159_GLITCH  250
+#define NC7159_MESSAGELENGTH 36
+
+  bool bitmessage[36];
+  byte i;
+
+  if (changeCount < NC7159_MESSAGELENGTH * 2) {
+    return false;
+  }
+  if ((timings[0] < NC7159_SYNC - NC7159_GLITCH) || (timings[0] > NC7159_SYNC + NC7159_GLITCH)) {
+    return false;
+  }
+
+  for (i = 0; i < (NC7159_MESSAGELENGTH * 2); i = i + 2)
+  {
+    if ((timings[i + 2] > NC7159_ZERO - NC7159_GLITCH) && (timings[i + 2] < NC7159_ZERO + NC7159_GLITCH))    {
+      bitmessage[i >> 1] = false;
+    }
+    else if ((timings[i + 2] > NC7159_ONE - NC7159_GLITCH) && (timings[i + 2] < NC7159_ONE + NC7159_GLITCH)) {
+      bitmessage[i >> 1] = true;
+    }
+    else {
+      return false;
+    }
+  }
+
+  // Sensor ID & Channel
+  byte unsigned id = bitmessage[3] | bitmessage[2] << 1 | bitmessage[1] << 2 | bitmessage[0] << 3 ;
+  if (id != 5) {
+    return false;
+  }
+
+  id = 0; // unterdruecke Bit 4+5, jetzt erst einmal nur 6 Bit
+  for (i = 6; i < 12; i++)  if (bitmessage[i]) id +=  1 << (13 - i);
+
+  // Bit 12 : immer 1 oder doch Battery State ?
+  bool battery = !bitmessage[12];
+
+  // Bit 14 + 15 = Kanal  0 - 2 , id nun bis auf 8 Bit fuellen
+  id = id | bitmessage[14] << 1 | bitmessage[15] ;
+
+  // Trigger
+  bool forcedSend = bitmessage[13];
+
+  int temperature = 0;
+  for (i = 17; i < 28; i++) if (bitmessage[i]) temperature +=  1 << (27 - i);
+  if (bitmessage[16]) temperature -= 0x1000; // negative Temp
+
+  // die restlichen 8 Bits sind z.Z unbekannt vllt. eine Pruefsumme ?
+  byte rest = 0;
+  for (i = 28; i < 36; i++) if (bitmessage[i]) rest +=  1 << (35 - i);
+
+  char tmp[11];
+  sprintf(tmp, "K%02x%01d%01d%01d%+04d%02d", id, battery, 0, forcedSend, temperature, rest);
+  message = tmp;
   available = true;
   return true;
 }
