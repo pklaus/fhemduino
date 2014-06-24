@@ -23,7 +23,7 @@
 //            - Implemented Decoding for OSV2 Protocol
 //            - Added some compiler switches for DCF-77, but they are currently not working
 //            - Optimized duration calculation and saved variable 'time'.
-// 2014-06-22 - Added Compiler Switch for __AVR_ATmega32U4__ DCF Pin#4
+// 2014-06-22 - Added Compiler Switch for __AVR_ATmega32U4__ DCF Pin#2
 
 // --- Configuration ---------------------------------------------------------
 #define PROGNAME               "FHEMduino"
