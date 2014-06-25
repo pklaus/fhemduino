@@ -1,7 +1,7 @@
 /// @dir FHEMduino (2013-11-07)
 /// FHEMduino communicator
 //
-// authors: mdorenka + jowiemann + sidex, mick6300
+// authors: mdorenka + jowiemann + sidey, mick6300
 // see http://forum.fhem.de/index.php/topic,17196.0.html
 //
 // History of changes:
@@ -23,7 +23,7 @@
 //            - Implemented Decoding for OSV2 Protocol
 //            - Added some compiler switches for DCF-77, but they are currently not working
 //            - Optimized duration calculation and saved variable 'time'.
-// 2014-06-22 - Added Compiler Switch for __AVR_ATmega32U4__ DCF Pin#4
+// 2014-06-22 - Added Compiler Switch for __AVR_ATmega32U4__ DCF Pin#2
 // 2014-06-24 - Capsulatet all decoder with #defines
 // 2014-06-24 - Added receive support for smoke detectors FA20RF / RM150RF (KD101 not verified)
 // 2014-06-24 - Added send / activate support for smoke detectors FA20RF / RM150RF (KD101 not verified) -- not yet inetgrated in FHEM-Modul
