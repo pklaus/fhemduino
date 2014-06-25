@@ -1,3 +1,6 @@
+/*
+ * EOF preprocessor bug prevent
+*/
 /// @dir FHEMduino (2013-11-07)
 /// FHEMduino communicator
 //
@@ -43,8 +46,6 @@
 #define PIN_SEND               11
 #define DHT11_PIN              1         // ADC0  Define the ANALOG Pin connected to DHT11 Sensor
 
-#include "Time.h"        // Unterstuetzung für Datum/Zeit-Funktionen
-
 //#define DEBUG           // Compile sketch witdh Debug informations
 #ifdef DEBUG
 #define BAUDRATE               115200
@@ -52,9 +53,10 @@
 #define BAUDRATE               9600
 #endif
 
-//#define WIRE-SUP        // Compile sketch with 1-WIRE-Support
+#define WIRE-SUP        // Compile sketch with 1-WIRE-Support
 
 #define COMP_DCF77      // Compile sketch witdh DCF-77 Support (currently disableling this is not working, has still to be done)
+#define nop() __asm volatile ("nop")
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
 #define COMP_FA20RF     // Compile sketch with smoke detector Flamingo FA20RF / ELRO RM150RF
 #define COMP_KW9010     // Compile sketch with KW9010 support
@@ -62,54 +64,6 @@
 #define COMP_EUROCHRON  // Compile sketch with EUROCHRON / Tchibo support
 #define COMP_LIFETEC    // Compile sketch with LIFETEC support
 #define COMP_TX70DTH    // Compile sketch with TX70DTH (Aldi) support
-
-ifdef WIRE-SUP
-#include "Wire.h"        // Unterstuetzung für 1-WIRE-Sensoren
-
-// Hallo Michael, ab hier kann ich für nichts garantieren
-#define COMP_DS3231     // Compile sketch with RTC Modul support
-#define COMP_BMP085     // compile sketch with BMP085 is a high-precision, ultra-low power barometric pressure sensor support
-#define COMP_DHT11      // compile sketch with DHT11 sensor support
-#define COMP_GAS        //
-#define COMP_MQ2        //
-
-// Ab bitte prüfen, ob die Variablen wirklich global definiert sein müssen und bitte auch den Modulen zuordnen.
-// Am Besten schon in die #ifdef ... #endif Bereich der Module verlagern
-// Ganz am Ende ist noch eine Funktion, die nirgendwo gebraucht wird...
-byte tMSB, tLSB;
-float temp3231,temp3231d;
-float tempbmp085, tempbmp085d;
-
-int temp1[3];                //Temp1, temp2, hum1 & hum2 are the final integer values that you are going to use in your program. 
-int temp2[3];                // They update every 2 seconds.
-int hum1[3];
-int hum2[3];
-
-int sensor_mq2 = A2;    
-int sensor_gas = A3;
-char tmp[11];
-
-//bmp085
-const unsigned char OSS = 0;  // Oversampling Setting
-
-// Calibration values
-int ac1;
-int ac2;
-int ac3;
-unsigned int ac4;
-unsigned int ac5;
-unsigned int ac6;
-int b1;
-int b2;
-int mb;
-int mc;
-int md;
-// b5 is calculated in bmp085GetTemperature(...), this variable is also used in bmp085GetPressure(...)
-// so ...Temperature(...) must be called before ...Pressure(...).
-long b5; 
-int fehler = 0;
-// Michel ende
-#endif
 
 //#define COMP_OSV2       // Compile sketch with OSV2 Support
 //#define COMP_Cresta     // Compile sketch with Cresta Support (currently not implemented, just for future use)
@@ -565,13 +519,21 @@ String cmdstring;
 volatile bool available = false;
 String message = "";
 
-#ifdef COMP_DCF77
+
+
 /*
  * DCF77_SerialTimeOutput
  * Ralf Bohnen, 2013
  * This example code is in the public domain.
  */
  
+/*
+ * BOF preprocessor bug prevent
+ * insert me on top of your arduino-code
+ */
+
+#ifdef COMP_DCF77
+#include "Time.h"        // Unterstuetzung für Datum/Zeit-Funktionen
 #include "DCF77.h"
  
 char time_s[9];
@@ -601,6 +563,54 @@ char* sprintDate() {
 }
 #endif
 
+#ifdef WIRE-SUP
+#include "Wire.h"        // Unterstuetzung für 1-WIRE-Sensoren
+
+// Hallo Michael, ab hier kann ich für nichts garantieren
+#define COMP_DS3231     // Compile sketch with RTC Modul support
+#define COMP_BMP085     // compile sketch with BMP085 is a high-precision, ultra-low power barometric pressure sensor support
+#define COMP_DHT11      // compile sketch with DHT11 sensor support
+#define COMP_GAS        //
+#define COMP_MQ2        //
+
+// Ab bitte prüfen, ob die Variablen wirklich global definiert sein müssen und bitte auch den Modulen zuordnen.
+// Am Besten schon in die #ifdef ... #endif Bereich der Module verlagern
+// Ganz am Ende ist noch eine Funktion, die nirgendwo gebraucht wird...
+byte tMSB, tLSB;
+float temp3231,temp3231d;
+float tempbmp085, tempbmp085d;
+
+int temp1[3];                //Temp1, temp2, hum1 & hum2 are the final integer values that you are going to use in your program. 
+int temp2[3];                // They update every 2 seconds.
+int hum1[3];
+int hum2[3];
+
+int sensor_mq2 = A2;    
+int sensor_gas = A3;
+char tmp[11];
+
+//bmp085
+const unsigned char OSS = 0;  // Oversampling Setting
+
+// Calibration values
+int ac1;
+int ac2;
+int ac3;
+unsigned int ac4;
+unsigned int ac5;
+unsigned int ac6;
+int b1;
+int b2;
+int mb;
+int mc;
+int md;
+// b5 is calculated in bmp085GetTemperature(...), this variable is also used in bmp085GetPressure(...)
+// so ...Temperature(...) must be called before ...Pressure(...).
+long b5; 
+int fehler = 0;
+// Michel ende
+#endif
+
 void setup() {
   // put your setup code here, to run once:
   
@@ -609,9 +619,11 @@ void setup() {
   pinMode(PIN_RECEIVE,INPUT);
   pinMode(PIN_SEND,OUTPUT);
 
+#ifdef WIRE-SUP
   Wire.begin();
   DDRC |= _BV(DHT11_PIN);
   PORTC |= _BV(DHT11_PIN);
+#endif
 
 #ifdef COMP_3231
   get3231Temp_start();
@@ -2138,5 +2150,4 @@ byte read_dht11_dat()
 
 //   return C;
 // }
-
 
