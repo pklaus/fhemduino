@@ -751,7 +751,7 @@ void handleInterrupt() {
         Serial.print(data[i] & 0x0F, HEX);
         Serial.print(",");
 #endif
-      tmp_len += snprintf(tmp + tmp_len, 36, "%X", data[i]);
+      tmp_len += snprintf(tmp + tmp_len, 36, "%02X", data[i]);
     }
 
 #ifdef DEBUG
@@ -784,7 +784,7 @@ void handleInterrupt() {
         Serial.print(data[i] & 0x0F, HEX);
         Serial.print(",");
 #endif
-      tmp_len += snprintf(tmp + tmp_len, 36, "%X", data[i]);
+      tmp_len += snprintf(tmp + tmp_len, 36, "%02X", data[i]);
     }
     
 #ifdef DEBUG
