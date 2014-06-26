@@ -1189,7 +1189,7 @@ bool receiveProtocolKW9010(unsigned int changeCount) {
 #ifdef DEBUG
     Serial.print("Bit-Stream: ");
     for (i = 0; i < KW9010_MESSAGELENGTH; i++) {
-      Serial.print(TX2_4_bitmessage[i]);
+      Serial.print(bitmessage[i]);
     }
     Serial.println();
 #endif
@@ -1573,7 +1573,7 @@ bool receiveProtocolLIFETEC(unsigned int changeCount) {
       Serial.print(bitmessage[i]);
     }
     Serial.println();
-  }
+  
 #endif
 
   // Sensor ID & Channel, will be changed after every battery change
