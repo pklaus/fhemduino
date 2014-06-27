@@ -44,7 +44,8 @@
 
 #define PIN_LED                13
 #define PIN_SEND               11
-#define DHT11_PIN              1         // ADC0  Define the ANALOG Pin connected to DHT11 Sensor
+
+
 
 //#define DEBUG           // Compile sketch witdh Debug informations
 #ifdef DEBUG
@@ -53,8 +54,9 @@
 #define BAUDRATE               9600
 #endif
 
-#define WIRE-SUP        // Compile sketch with 1-WIRE-Support
-
+#ifndef __AVR_ATmega32U4__
+#define WIRE-SUP        // Compile sketch with 1-WIRE-Support. This does not work on ATMega32U
+#endif
 #define COMP_DCF77      // Compile sketch witdh DCF-77 Support (currently disableling this is not working, has still to be done)
 #define nop() __asm volatile ("nop")
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
@@ -65,14 +67,12 @@
 #define COMP_LIFETEC    // Compile sketch with LIFETEC support
 #define COMP_TX70DTH    // Compile sketch with TX70DTH (Aldi) support
 
-//#define COMP_OSV2       // Compile sketch with OSV2 Support
-//#define COMP_Cresta     // Compile sketch with Cresta Support (currently not implemented, just for future use)
+#define COMP_OSV2       // Compile sketch with OSV2 Support
+#define COMP_Cresta     // Compile sketch with Cresta Support (currently not implemented, just for future use)
 
 // Future enhancement
 //#define COMP_TX2_4    // Compile sketch for LaCroose TX2/4 support
-
 //#define COMP_OSV3     // Compile sketch with OSV3 Support (currently not implemented, just for future use)
-
 //#define COMP_Kaku     // Compile sketch with Kaku  Support (currently not implemented, just for future use)
 //#define COMP_HEZ      // Compile sketch with Homeeasy Support (currently not implemented, just for future use)
 //#define COMP_XRF      // Compile sketch with XTF Support (currently not implemented, just for future use)
@@ -92,7 +92,7 @@
 OregonDecoderV2 orscV2;
 #endif
 
-#ifdef COMP_Cresta     // Compile sketch with Cresta Support (currently not implemented, just for future use)
+#ifdef COMP_Cresta     // Compile sketch with Cresta Support (currently not implemened, just for future use)
 CrestaDecoder cres;
 #endif
 
@@ -575,8 +575,10 @@ char* sprintDate() {
 #define COMP_DS3231     // Compile sketch with RTC Modul support
 #define COMP_BMP085     // compile sketch with BMP085 is a high-precision, ultra-low power barometric pressure sensor support
 #define COMP_DHT11      // compile sketch with DHT11 sensor support
+#define DHT11_PIN              1         // ADC0  Define the ANALOG Pin connected to DHT11 Sensor
 #define COMP_GAS        //
 #define COMP_MQ2        //
+
 
 // Ab bitte prüfen, ob die Variablen wirklich global definiert sein müssen und bitte auch den Modulen zuordnen.
 // Am Besten schon in die #ifdef ... #endif Bereich der Module verlagern
@@ -614,17 +616,28 @@ int md;
 long b5; 
 int fehler = 0;
 // Michel ende
-#endif
+#endif  //WIRE-SUP
 
 void setup() {
   // put your setup code here, to run once:
-  
+#ifdef DEBUG
+    delay(3000);
+    Serial.println(" -------------------------------------- ");
+    Serial.print("    ");
+    Serial.print(PROGNAME);
+    Serial.print(" ");
+    Serial.println(PROGVERS);
+    Serial.println(" -------------------------------------- ");
+#endif
+
+
+
   Serial.begin(BAUDRATE);
   enableReceive();
   pinMode(PIN_RECEIVE,INPUT);
   pinMode(PIN_SEND,OUTPUT);
 
-#ifdef WIRE-SUP
+#ifdef COMP_DHT11
   Wire.begin();
   DDRC |= _BV(DHT11_PIN);
   PORTC |= _BV(DHT11_PIN);
@@ -638,14 +651,6 @@ void setup() {
   bmp085Calibration(); //nur wenn bmp085 angeschlossen
 #endif
 
-#ifdef DEBUG
-    Serial.println(" -------------------------------------- ");
-    Serial.print("    ");
-    Serial.print(PROGNAME);
-    Serial.print(" ");
-    Serial.println(PROGVERS);
-    Serial.println(" -------------------------------------- ");
-#endif
 
 #ifdef COMP_DCF77
     DCF.Start();
@@ -655,7 +660,7 @@ void setup() {
     Serial.println("Dies kann 2 oder mehr Minuten dauern.");
 #endif
 
-#endif
+#endif // COMP_DCF77
 
 }
 
@@ -1089,7 +1094,8 @@ void HandleCommand(String cmd)
   // Version Information
   if (cmd.equals("V"))
   {
-    Serial.println(F("V 1.0b1 FHEMduino - compiled at " __DATE__ " " __TIME__));
+    Serial.print(PROGVERS);
+    Serial.println(F(" FHEMduino - compiled at " __DATE__ " " __TIME__));
   }
   // Print free Memory
   else if (cmd.equals("R")) {
@@ -2052,6 +2058,7 @@ int readRegister(int deviceAddress, byte address){
 #endif
 
 #ifdef COMP_DHT11
+
 bool getdht11()
 {
     byte dht11_dat[5];
