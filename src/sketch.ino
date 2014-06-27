@@ -1116,7 +1116,8 @@ void HandleCommand(String cmd)
     cmd.substring(3).toCharArray(msg,3);
     ITrepetition = atoi(msg);
     Serial.println(cmd);
-  }  // Switch Intertechno Devices
+  }  
+  // Switch Intertechno Devices
   else if (cmd.startsWith("is"))
   {
     digitalWrite(PIN_LED,HIGH);
@@ -1281,52 +1282,54 @@ bool receiveProtocolPT2262(unsigned int changeCount) {
   available = true;
   return true;
 }
+
 void sendPT2262(char* triStateMessage) {
-  for (int i = 0; i < 3; i++) {
+  unsigned int BaseDur = 350; // Um ggf. die Basiszeit einstellen zu können
+  for (int i = 0; i < ITrepetition; i++) {
     unsigned int pos = 0;
+    PT2262_sendSync(BaseDur);    
     while (triStateMessage[pos] != '\0') {
       switch(triStateMessage[pos]) {
       case '0':
-        PT2262_sendT0();
+        PT2262_sendT0(BaseDur);
         break;
       case 'F':
-        PT2262_sendTF();
+        PT2262_sendTF(BaseDur);
         break;
       case '1':
-        PT2262_sendT1();
+        PT2262_sendT1(BaseDur);
         break;
       }
       pos++;
     }
-    PT2262_sendSync();    
   }
 }
 
-void PT2262_sendT0() {
-  PT2262_transmit(1,3);
-  PT2262_transmit(1,3);
+void PT2262_sendT0(unsigned int BaseDur) {
+  PT2262_transmit(1,3,BaseDur);
+  PT2262_transmit(1,3,BaseDur);
 }
 
-void PT2262_sendT1() {
-  PT2262_transmit(3,1);
-  PT2262_transmit(3,1);
+void PT2262_sendT1(unsigned int BaseDur) {
+  PT2262_transmit(3,1,BaseDur);
+  PT2262_transmit(3,1,BaseDur);
 }
 
-void PT2262_sendTF() {
-  PT2262_transmit(1,3);
-  PT2262_transmit(3,1);
+void PT2262_sendTF(unsigned int BaseDur) {
+  PT2262_transmit(1,3,BaseDur);
+  PT2262_transmit(3,1,BaseDur);
 }
 
-void PT2262_sendSync() {
-  PT2262_transmit(1,31);
+void PT2262_sendSync(unsigned int BaseDur) {
+  PT2262_transmit(1,31,BaseDur);
 }
 
-void PT2262_transmit(int nHighPulses, int nLowPulses) {
+void PT2262_transmit(int nHighPulses, int nLowPulses, unsigned int BaseDur) {
   disableReceive();
   digitalWrite(PIN_SEND, HIGH);
-  delayMicroseconds(350 * nHighPulses);
+  delayMicroseconds(BaseDur * nHighPulses);
   digitalWrite(PIN_SEND, LOW);
-  delayMicroseconds(350 * nLowPulses);
+  delayMicroseconds(BaseDur * nLowPulses);
   enableReceive();
 }
 #endif
