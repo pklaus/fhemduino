@@ -509,6 +509,11 @@ HezDecoder hez;
 #endif
 
 /*
+ * PT2262
+ */
+static unsigned int ITrepetition = 3;
+
+/*
  * Weather sensors
  */
 #define MAX_CHANGES            90
@@ -1095,7 +1100,6 @@ void HandleCommand(String cmd)
   // Switch FA20RF Devices
   else if (cmd.startsWith("sd"))
   {
-  // sd010011010100111011111101#
     digitalWrite(PIN_LED,HIGH);
     char msg[30];
     cmd.substring(2).toCharArray(msg,30);
@@ -1105,7 +1109,14 @@ void HandleCommand(String cmd)
   }
 #endif
 #ifdef COMP_PT2262
-  // Switch Intertechno Devices
+  // Set Intertechno Repetition
+  else if (cmd.startsWith("isr"))
+  {
+    char msg[3];
+    cmd.substring(3).toCharArray(msg,3);
+    ITrepetition = atoi(msg);
+    Serial.println(cmd);
+  }  // Switch Intertechno Devices
   else if (cmd.startsWith("is"))
   {
     digitalWrite(PIN_LED,HIGH);
