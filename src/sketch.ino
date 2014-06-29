@@ -34,7 +34,7 @@
 
 // --- Configuration ---------------------------------------------------------
 #define PROGNAME               "FHEMduino"
-#define PROGVERS               "2.1a"
+#define PROGVERS               "V2.1a-201406291545"
 
 #if defined(__AVR_ATmega32U4__)          //on the leonardo and other ATmega32U4 devices interrupt 0 is on dpin 3
 #define PIN_RECEIVE            3
@@ -55,7 +55,7 @@
 #endif
 
 #ifndef __AVR_ATmega32U4__
-#define WIRE-SUP        // Compile sketch with 1-WIRE-Support. This does not work on ATMega32U
+//#define WIRE-SUP        // Compile sketch with 1-WIRE-Support. This does not work on ATMega32U
 #endif
 #define COMP_DCF77      // Compile sketch witdh DCF-77 Support (currently disableling this is not working, has still to be done)
 #define nop() __asm volatile ("nop")
@@ -620,7 +620,10 @@ int fehler = 0;
 
 void setup() {
   // put your setup code here, to run once:
-#ifdef DEBUG
+  
+  Serial.begin(BAUDRATE);
+  
+  #ifdef DEBUG
     delay(3000);
     Serial.println(" -------------------------------------- ");
     Serial.print("    ");
@@ -631,10 +634,8 @@ void setup() {
 #endif
 
 
-
-  Serial.begin(BAUDRATE);
-  enableReceive();
   pinMode(PIN_RECEIVE,INPUT);
+  enableReceive();
   pinMode(PIN_SEND,OUTPUT);
 
 #ifdef COMP_DHT11
