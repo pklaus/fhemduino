@@ -630,6 +630,9 @@ void setup() {
     Serial.print(PROGNAME);
     Serial.print(" ");
     Serial.println(PROGVERS);
+    Serial.print(" ");
+    Serial.print("Free Ram: ");
+    Serial.println(freeRam());
     Serial.println(" -------------------------------------- ");
 #endif
 
