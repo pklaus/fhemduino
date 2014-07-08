@@ -30,13 +30,15 @@
 // 2014-06-24 - Capsulatet all decoder with #defines
 // 2014-06-24 - Added receive support for smoke detectors FA20RF / RM150RF (KD101 not verified)
 // 2014-06-24 - Added send / activate support for smoke detectors FA20RF / RM150RF (KD101 not verified) -- not yet inetgrated in FHEM-Modul
-// 2014-06-24 - Integrated mick6300 developments (not tested yet, global Variables have to be sorted into #ifdefs, Modul have to sorted to 1-WIRE
+// 2014-06-24 - Integrated mick6300 developments LIFETEC support
+// 2014-06-24 - Integrated mick6300 developments TX70DTH (Aldi) support
+// 2014-07-04 - Integrated Intertechno TX2/3/4 support, see CUL_TX and http://www.f6fbb.org/domo/sensors/tx3_th.php
 
 // --- Configuration ---------------------------------------------------------
 #define PROGNAME               "FHEMduino"
-#define PROGVERS               "V2.1a-201406291545"
+#define PROGVERS               "2.1c"    // Full versionstring is build in handle command function
 
-#if defined(__AVR_ATmega32U4__)          //on the leonardo and other ATmega32U4 devices interrupt 0 is on dpin 3
+#if defined(__AVR_ATmega32U4__)          // on the leonardo and other ATmega32U4 devices interrupt 0 is on dpin 3
 #define PIN_RECEIVE            3
 #else
 #define PIN_RECEIVE            2
@@ -45,8 +47,6 @@
 #define PIN_LED                13
 #define PIN_SEND               11
 
-
-
 //#define DEBUG           // Compile sketch witdh Debug informations
 #ifdef DEBUG
 #define BAUDRATE               115200
@@ -54,11 +54,7 @@
 #define BAUDRATE               9600
 #endif
 
-#ifndef __AVR_ATmega32U4__
-//#define WIRE-SUP        // Compile sketch with 1-WIRE-Support. This does not work on ATMega32U
-#endif
-#define COMP_DCF77      // Compile sketch witdh DCF-77 Support (currently disableling this is not working, has still to be done)
-#define nop() __asm volatile ("nop")
+#define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
 #define COMP_FA20RF     // Compile sketch with smoke detector Flamingo FA20RF / ELRO RM150RF
 #define COMP_KW9010     // Compile sketch with KW9010 support
@@ -66,12 +62,12 @@
 #define COMP_EUROCHRON  // Compile sketch with EUROCHRON / Tchibo support
 #define COMP_LIFETEC    // Compile sketch with LIFETEC support
 #define COMP_TX70DTH    // Compile sketch with TX70DTH (Aldi) support
+#define COMP_IT_TX      // Compile sketch with Intertechno TX2/3/4 support
 
-#define COMP_OSV2       // Compile sketch with OSV2 Support
-#define COMP_Cresta     // Compile sketch with Cresta Support (currently not implemented, just for future use)
+//#define COMP_OSV2       // Compile sketch with OSV2 Support
+//#define COMP_Cresta     // Compile sketch with Cresta Support (currently not implemented, just for future use)
 
 // Future enhancement
-//#define COMP_TX2_4    // Compile sketch for LaCroose TX2/4 support
 //#define COMP_OSV3     // Compile sketch with OSV3 Support (currently not implemented, just for future use)
 //#define COMP_Kaku     // Compile sketch with Kaku  Support (currently not implemented, just for future use)
 //#define COMP_HEZ      // Compile sketch with Homeeasy Support (currently not implemented, just for future use)
@@ -509,6 +505,11 @@ HezDecoder hez;
 #endif
 
 /*
+ * FA20RF
+ */
+static unsigned int FArepetition = 10;
+
+/*
  * PT2262
  */
 static unsigned int ITrepetition = 3;
@@ -523,8 +524,6 @@ unsigned int timings2500[MAX_CHANGES];      //  Startbit_2500
 String cmdstring;
 volatile bool available = false;
 String message = "";
-
-
 
 /*
  * DCF77_SerialTimeOutput
@@ -568,93 +567,25 @@ char* sprintDate() {
 }
 #endif
 
-#ifdef WIRE-SUP
-#include "Wire.h"        // Unterstuetzung für 1-WIRE-Sensoren
-
-// Hallo Michael, ab hier kann ich für nichts garantieren
-#define COMP_DS3231     // Compile sketch with RTC Modul support
-#define COMP_BMP085     // compile sketch with BMP085 is a high-precision, ultra-low power barometric pressure sensor support
-#define COMP_DHT11      // compile sketch with DHT11 sensor support
-#define DHT11_PIN              1         // ADC0  Define the ANALOG Pin connected to DHT11 Sensor
-#define COMP_GAS        //
-#define COMP_MQ2        //
-
-
-// Ab bitte prüfen, ob die Variablen wirklich global definiert sein müssen und bitte auch den Modulen zuordnen.
-// Am Besten schon in die #ifdef ... #endif Bereich der Module verlagern
-// Ganz am Ende ist noch eine Funktion, die nirgendwo gebraucht wird...
-byte tMSB, tLSB;
-float temp3231,temp3231d;
-float tempbmp085, tempbmp085d;
-
-int temp1[3];                //Temp1, temp2, hum1 & hum2 are the final integer values that you are going to use in your program. 
-int temp2[3];                // They update every 2 seconds.
-int hum1[3];
-int hum2[3];
-
-int sensor_mq2 = A2;    
-int sensor_gas = A3;
-char tmp[11];
-
-//bmp085
-const unsigned char OSS = 0;  // Oversampling Setting
-
-// Calibration values
-int ac1;
-int ac2;
-int ac3;
-unsigned int ac4;
-unsigned int ac5;
-unsigned int ac6;
-int b1;
-int b2;
-int mb;
-int mc;
-int md;
-// b5 is calculated in bmp085GetTemperature(...), this variable is also used in bmp085GetPressure(...)
-// so ...Temperature(...) must be called before ...Pressure(...).
-long b5; 
-int fehler = 0;
-// Michel ende
-#endif  //WIRE-SUP
-
 void setup() {
   // put your setup code here, to run once:
-  
   Serial.begin(BAUDRATE);
-  
-  #ifdef DEBUG
+  enableReceive();
+  pinMode(PIN_RECEIVE,INPUT);
+  pinMode(PIN_SEND,OUTPUT);
+
+#ifdef DEBUG
     delay(3000);
     Serial.println(" -------------------------------------- ");
     Serial.print("    ");
     Serial.print(PROGNAME);
     Serial.print(" ");
     Serial.println(PROGVERS);
-    Serial.print(" ");
-    Serial.print("Free Ram: ");
-    Serial.println(freeRam());
+    Serial.print(" "); 
+    Serial.print("Free Ram: "); 
+    Serial.println(freeRam()); 
     Serial.println(" -------------------------------------- ");
 #endif
-
-
-  pinMode(PIN_RECEIVE,INPUT);
-  enableReceive();
-  pinMode(PIN_SEND,OUTPUT);
-
-#ifdef COMP_DHT11
-  Wire.begin();
-  DDRC |= _BV(DHT11_PIN);
-  PORTC |= _BV(DHT11_PIN);
-#endif
-
-#ifdef COMP_3231
-  get3231Temp_start();
-#endif
-
-#ifdef COMP_BMP085
-  bmp085Calibration(); //nur wenn bmp085 angeschlossen
-#endif
-
 
 #ifdef COMP_DCF77
     DCF.Start();
@@ -669,31 +600,8 @@ void setup() {
 }
 
 void loop() {
-  static uint32_t timer;
-  int geraete_zahl = 1;
-  int geraete = 2; 
 
   // put your main code here, to run repeatedly: 
-
-  if (millis() > timer) {
-    timer = millis() + 100000;
-#ifdef COMP_GAS
-    gas_sendData();
-#endif
-/*     switch(geraete_zahl){
-        case 1:  mq2_sendData();
-                 break;
-        case 2:  gas_sendData();
-                 break;
-        case 3:  getdht11();
-                 break;
-        case 4:  getbmp085();
-                 break;
-     }
-     if (geraete_zahl == geraete) {geraete_zahl = 0;}
-     geraete_zahl++;
-//     Serial.println(fehler);*/
-  }
 
   if (messageAvailable()) {
     Serial.println(message);
@@ -741,6 +649,9 @@ void handleInterrupt() {
   
 #ifdef COMP_FA20RF
   FA20RF(duration);
+#endif
+#ifdef COMP_IT_TX
+  IT_TX(duration);
 #endif
   Startbit_5000(duration);
   Startbit_2500(duration);
@@ -813,6 +724,179 @@ void handleInterrupt() {
 
   lastTime += duration;
 }
+
+#ifdef COMP_IT_TX
+/*
+ * TX Receiver
+ */
+#define TX_MAX_CHANGES 88
+unsigned int timingsTX[TX_MAX_CHANGES+20];      //  TX
+
+// http://www.f6fbb.org/domo/sensors/tx3_th.php
+void IT_TX(unsigned int duration) {
+
+  static unsigned int changeCount;
+  static unsigned int fDuration;
+  static unsigned int sDuration;
+
+  sDuration = fDuration + duration;
+  
+  if ((sDuration > 1550 - 200 && sDuration < 1550 + 200) || (sDuration > 2150 - 200 && sDuration < 2150 + 200)) {
+    if ((duration > 520 - 100 && duration < 520 + 100) || (duration > 1250 - 100 && duration < 1250 + 100) || (duration > 950 - 100 && duration < 950 + 100)) {
+      if (changeCount == 0 ) {
+//        Serial.print(changeCount);
+//        Serial.print(" ");
+//        Serial.println(fDuration);
+        timingsTX[changeCount++] = fDuration;
+      }
+//      Serial.print(changeCount);
+//      Serial.print(" ");
+//      Serial.println(duration);
+      timingsTX[changeCount++] = duration;
+    }
+
+    if ( changeCount == TX_MAX_CHANGES - 1) {
+      receiveProtocolIT_TX(changeCount);
+      changeCount = 0;
+      fDuration = 0;
+    } 
+  } else {
+    changeCount = 0;
+  }
+
+  fDuration = duration;
+}
+
+/*
+ * Intertechno TX2_3 Decoder
+ */
+void receiveProtocolIT_TX(unsigned int changeCount) {
+#define TX_ONE    520
+#define TX_ZERO   1250
+#define TX_GLITCH  100
+#define TX_MESSAGELENGTH 44
+
+  byte i;
+  unsigned long code = 0;
+
+  message = "TX";
+
+  for (i = 0; i <= 14; i = i + 2)
+  {
+    if ((timingsTX[i] > TX_ZERO - TX_GLITCH) && (timingsTX[i] < TX_ZERO + TX_GLITCH))    {
+      code <<= 1;
+    }
+    else if ((timingsTX[i] > TX_ONE - TX_GLITCH) && (timingsTX[i] < TX_ONE + TX_GLITCH)) {
+      code <<= 1;
+      code |= 1;
+    }
+    else {
+      return;
+    }
+  }
+  message += String(code,HEX);
+  
+  // Startsequence 0000 1010 = 0xA
+  if (code != 10) {
+    Serial.println("Fehler");
+    return;
+  }
+  code = 0;
+  
+  // Sensor type 0000 = Temp / 1110 = Humidity
+  for (i = 16; i <= 22; i = i + 2)
+  {
+    if ((timingsTX[i] > TX_ZERO - TX_GLITCH) && (timingsTX[i] < TX_ZERO + TX_GLITCH))    {
+      code <<= 1;
+    }
+    else if ((timingsTX[i] > TX_ONE - TX_GLITCH) && (timingsTX[i] < TX_ONE + TX_GLITCH)) {
+      code <<= 1;
+      code |= 1;
+    }
+    else {
+      return;
+    }
+  }
+  message += String(code,HEX);
+  code = 0;
+
+  // Sensor adress
+  for (i = 24; i <= 38; i = i + 2)
+  {
+    if ((timingsTX[i] > TX_ZERO - TX_GLITCH) && (timingsTX[i] < TX_ZERO + TX_GLITCH))    {
+      code <<= 1;
+    }
+    else if ((timingsTX[i] > TX_ONE - TX_GLITCH) && (timingsTX[i] < TX_ONE + TX_GLITCH)) {
+      code <<= 1;
+      code |= 1;
+    }
+    else {
+      return;
+    }
+  }
+  message += String(code,HEX);
+  code = 0;
+
+  // Temp or Humidity
+  for (i = 40; i <= 62; i = i + 2)
+  {
+    if ((timingsTX[i] > TX_ZERO - TX_GLITCH) && (timingsTX[i] < TX_ZERO + TX_GLITCH))    {
+      code <<= 1;
+    }
+    else if ((timingsTX[i] > TX_ONE - TX_GLITCH) && (timingsTX[i] < TX_ONE + TX_GLITCH)) {
+      code <<= 1;
+      code |= 1;
+    }
+    else {
+      return;
+    }
+  }
+  message += String(code,HEX);
+  code = 0;
+
+  // Repeated Bytes temp / Humidity
+  for (i = 64; i <= 78; i = i + 2)
+  {
+    if ((timingsTX[i] > TX_ZERO - TX_GLITCH) && (timingsTX[i] < TX_ZERO + TX_GLITCH))    {
+      code <<= 1;
+    }
+    else if ((timingsTX[i] > TX_ONE - TX_GLITCH) && (timingsTX[i] < TX_ONE + TX_GLITCH)) {
+      code <<= 1;
+      code |= 1;
+    }
+    else {
+      return;
+    }
+  }
+  message += String(code,HEX);
+  code = 0;
+
+  // Checksum
+  for (i = 80; i <= changeCount; i = i + 2)
+  {
+    if ((timingsTX[i] > TX_ZERO - TX_GLITCH) && (timingsTX[i] < TX_ZERO + TX_GLITCH))    {
+      code <<= 1;
+    }
+    else if ((timingsTX[i] > TX_ONE - TX_GLITCH) && (timingsTX[i] < TX_ONE + TX_GLITCH)) {
+      code <<= 1;
+      code |= 1;
+    }
+    else {
+      Serial.println("F");
+      return;
+    }
+  }
+  message += String(code,HEX);
+  
+  message.toUpperCase();
+
+ // Serial.print("TX2_3: ");
+ // Serial.println(i);
+
+  available = true;
+  return;
+}
+#endif
 
 #ifdef COMP_FA20RF
 /*
@@ -924,8 +1008,7 @@ void receiveProtocolFA20RF(unsigned int changeCount) {
 void sendFA20RF(char* triStateMessage) {
   unsigned int pos = 0;
 
-  // sd010011010100111011111101#
-  for (int i = 0; i < 14; i++) {
+  for (int i = 0; i < FArepetition; i++) {
     delay(1);
     pos = 0;
     disableReceive();
@@ -1085,6 +1168,7 @@ void serialEvent()
     case '\n':
     case '\r':
     case '\0':
+    case '#':
       HandleCommand(cmdstring);
       break;
     default:
@@ -1098,8 +1182,10 @@ void HandleCommand(String cmd)
   // Version Information
   if (cmd.equals("V"))
   {
-    Serial.print(PROGVERS);
-    Serial.println(F(" FHEMduino - compiled at " __DATE__ " " __TIME__));
+//    Serial.print(PROGVERS);
+//    Serial.println(F(" FHEMduino - compiled at " __DATE__ " " __TIME__));
+//    Serial.println(F("V 1.0b1 FHEMduino - compiled at " __DATE__ " " __TIME__));
+    Serial.println(F("V " PROGVERS " FHEMduino - compiled at " __DATE__ " " __TIME__));
   }
   // Print free Memory
   else if (cmd.equals("R")) {
@@ -1107,6 +1193,14 @@ void HandleCommand(String cmd)
     Serial.println(freeRam());
   }
 #ifdef COMP_FA20RF
+  // Set FA20RF Repetition
+  else if (cmd.startsWith("sdr"))
+  {
+    char msg[3];
+    cmd.substring(3).toCharArray(msg,3);
+    FArepetition = atoi(msg);
+    Serial.println(cmd);
+  }  
   // Switch FA20RF Devices
   else if (cmd.startsWith("sd"))
   {
@@ -1146,7 +1240,7 @@ void HandleCommand(String cmd)
   // Print Available Commands
   else if (cmd.equals("?"))
   {
-    Serial.println(F("? Use one of V is R q"));
+    Serial.println(F("? Use one of V is isr sd sdr R q"));
   }
   cmdstring = "";
 }
@@ -1539,7 +1633,7 @@ bool receiveProtocolEuroChron(unsigned int changeCount) {
   if (bitmessage[24]) temperature -= 2048; // negative Temp
 
   char tmp[14];
-  sprintf(tmp, "T%02x%01d%01d%01d%02d%+04d%02d", id, battery, firstunknown, forcedSend, secunknown, temperature, humidity);
+  sprintf(tmp, "C%02x%01d%01d%01d%02d%+04d%02d", id, battery, firstunknown, forcedSend, secunknown, temperature, humidity);
   message = tmp;
   available = true;
   return true;
@@ -1721,458 +1815,4 @@ bool receiveProtocolTX70DTH(unsigned int changeCount) {
   return true;
 }
 #endif
-
-#ifdef COMP_MQ2
-bool mq2_sendData() {
-//  int sensor_mq2 = A4;    
-//  int sensor_gas = A5;    
-  // Sensor ID & Channel
-  byte id = 16;
-  // (Propably) Battery State
-  bool battery = 1;
-  // Trend
-  byte trend = 1;
-  // Trigger
-  bool forcedSend = 1;
-
-  // Temperature & Humidity
-    int mq2_value = analogRead(sensor_mq2);    
-    int gas_value = analogRead(sensor_gas);
-    int temperature = mq2_value;
-    byte humidity = 1;
-    sprintf(tmp,"G%02X%01d%01d%01d%+04d%02d", id, battery, trend, forcedSend, temperature, humidity);
-//    Serial.println(tmp);
-  message = tmp;
-  available = true;
-  return true;
-}
-#endif
-
-#ifdef COMP_GAS
-bool gas_sendData() {
-//  int sensor_mq2 = A4;    
-//  int sensor_gas = A5;    
-  // Sensor ID & Channel
-  byte id = 11;
-  // (Propably) Battery State
-  bool stati = 0;
-
-  // Temperature & Humidity
-    int mq2_value = analogRead(sensor_mq2);    
-    int gas_value = analogRead(sensor_gas);
-    if (gas_value > 100 || mq2_value > 150) {stati = 1;}
-    byte humidity = 1;
-    sprintf(tmp,"G%02X%01d%+04d%+04d", id, stati, gas_value, mq2_value);
-//    Serial.println(tmp);
-  message = tmp;
-  available = true;
-  return true;
-}
-#endif
-
-#ifdef COMP_DS3231
-#define DS3231_I2C_ADDRESS 104
-bool get3231Temp()
-{
-  //temp registers (11h-12h) get updated automatically every 64s
-  Wire.beginTransmission(DS3231_I2C_ADDRESS);
-  Wire.write(0x11);
-  Wire.endTransmission();
-  Wire.requestFrom(DS3231_I2C_ADDRESS, 2);
- 
-  if(Wire.available()) {
-    tMSB = Wire.read(); //2's complement int portion
-    tLSB = Wire.read(); //fraction portion
-   
-    temp3231 = (tMSB & B01111111); //do 2's math on Tmsb
-    temp3231 += ( (tLSB >> 6) * 0.25 ); //only care about bits 7 & 8
-  }
-  else {
-    //oh noes, no data!
-  }
-//  temp3231 = (int)((temp3231 * 10) + .5); 
-//  return temp3231;
-
-temp3231d = ((temp3231d * 10) + temp3231) / 11;
-byte trend = 0;
-
-if (temp3231d > temp3231) {
-  trend = 2;
-}
-  
-if (temp3231d < temp3231) {
-  trend = 1;
-}  
-
-  // Sensor ID & Channel
-  byte id = 15;
-  // (Propably) Battery State
-  bool battery = 0;
-  // Trend
-//  byte trend = 0;
-  // Trigger
-  bool forcedSend = 1;
-
-  // Temperature & Humidity
-    int temperature = (int)((temp3231 * 10) + .5);
-    byte humidity = 1;
-    sprintf(tmp,"K%02X%01d%01d%01d%+04d%02d", id, battery, trend, forcedSend, temperature, humidity);
-//    Serial.println(tmp);
-  message = tmp;
-  available = true;
-  return true;
-}
-
-int get3231Temp_start()
-{ 
-  //temp registers (11h-12h) get updated automatically every 64s
-  Wire.beginTransmission(DS3231_I2C_ADDRESS);
-  Wire.write(0x11);
-  Wire.endTransmission();
-  Wire.requestFrom(DS3231_I2C_ADDRESS, 2);
- 
-  if(Wire.available()) {
-    tMSB = Wire.read(); //2's complement int portion
-    tLSB = Wire.read(); //fraction portion
-   
-    temp3231 = (tMSB & B01111111); //do 2's math on Tmsb
-    temp3231 += ( (tLSB >> 6) * 0.25 ); //only care about bits 7 & 8
-  }
-  else {
-    //oh noes, no data!
-  }
-//  temp3231 = (int)((temp3231 * 10) + .5); 
-//  return temp3231;
-temp3231d = temp3231;
-}
-#endif
-
-#ifdef COMP_BMP085
-#define BMP085_ADDRESS 0x77  // I2C address of BMP085
-
-bool getbmp085 () {
-  byte trend = 0;
-
-  tempbmp085d = ((tempbmp085d * 10) + tempbmp085) / 11;
-
-  if (tempbmp085d > tempbmp085) {
-    trend = 2;
-  }
-  
-  if (tempbmp085d < tempbmp085) {
-    trend = 1;
-  }  
-
-  // Sensor ID & Channel
-  byte id = 20;
-  
-  // (Propably) Battery State
-  bool battery = 0;
-  
-  // Trend
-  // byte trend = 0;
-  
-  // Trigger
-  bool forcedSend = 1;
-
-  // Temperature & Humidity
-  // int temperature = (int)((temp3231 * 10) + .5);
-  int temperature = int ((bmp085GetTemperature(bmp085ReadUT()) * 10)+ .5); //MUST be called first
-  float pressure = bmp085GetPressure(bmp085ReadUP());
-
-  byte humidity = 1;
-  sprintf(tmp,"K%02X%01d%01d%01d%+04d%02d", id, battery, trend, forcedSend, temperature, humidity);
-  message = tmp;
-  available = true;
-  return true;
-}
-
-// Stores all of the bmp085's calibration values into global variables
-// Calibration values are required to calculate temp and pressure
-// This function should be called at the beginning of the program
-void bmp085Calibration()
-{
-  ac1 = bmp085ReadInt(0xAA);
-  ac2 = bmp085ReadInt(0xAC);
-  ac3 = bmp085ReadInt(0xAE);
-  ac4 = bmp085ReadInt(0xB0);
-  ac5 = bmp085ReadInt(0xB2);
-  ac6 = bmp085ReadInt(0xB4);
-  b1 = bmp085ReadInt(0xB6);
-  b2 = bmp085ReadInt(0xB8);
-  mb = bmp085ReadInt(0xBA);
-  mc = bmp085ReadInt(0xBC);
-  md = bmp085ReadInt(0xBE);
-}
-
-// Calculate temperature in deg C
-float bmp085GetTemperature(unsigned int ut){
-  long x1, x2;
-
-  x1 = (((long)ut - (long)ac6)*(long)ac5) >> 15;
-  x2 = ((long)mc << 11)/(x1 + md);
-  b5 = x1 + x2;
-
-  float temp = ((b5 + 8)>>4);
-  temp = temp /10;
-
-  return temp;
-}
-
-// Calculate pressure given up
-// calibration values must be known
-// b5 is also required so bmp085GetTemperature(...) must be called first.
-// Value returned will be pressure in units of Pa.
-long bmp085GetPressure(unsigned long up){
-  long x1, x2, x3, b3, b6, p;
-  unsigned long b4, b7;
-
-  b6 = b5 - 4000;
-  // Calculate B3
-  x1 = (b2 * (b6 * b6)>>12)>>11;
-  x2 = (ac2 * b6)>>11;
-  x3 = x1 + x2;
-  b3 = (((((long)ac1)*4 + x3)<<OSS) + 2)>>2;
-
-  // Calculate B4
-  x1 = (ac3 * b6)>>13;
-  x2 = (b1 * ((b6 * b6)>>12))>>16;
-  x3 = ((x1 + x2) + 2)>>2;
-  b4 = (ac4 * (unsigned long)(x3 + 32768))>>15;
-
-  b7 = ((unsigned long)(up - b3) * (50000>>OSS));
-  if (b7 < 0x80000000)
-    p = (b7<<1)/b4;
-  else
-    p = (b7/b4)<<1;
-
-  x1 = (p>>8) * (p>>8);
-  x1 = (x1 * 3038)>>16;
-  x2 = (-7357 * p)>>16;
-  p += (x1 + x2 + 3791)>>4;
-
-  long temp = p;
-  return temp;
-}
-
-// Read 1 byte from the BMP085 at 'address'
-char bmp085Read(unsigned char address)
-{
-  unsigned char data;
-
-  Wire.beginTransmission(BMP085_ADDRESS);
-  Wire.write(address);
-  Wire.endTransmission();
-
-  Wire.requestFrom(BMP085_ADDRESS, 1);
-  while(!Wire.available())
-    ;
-
-  return Wire.read();
-}
-
-// Read 2 bytes from the BMP085
-// First byte will be from 'address'
-// Second byte will be from 'address'+1
-int bmp085ReadInt(unsigned char address)
-{
-  unsigned char msb, lsb;
-
-  Wire.beginTransmission(BMP085_ADDRESS);
-  Wire.write(address);
-  Wire.endTransmission();
-
-  Wire.requestFrom(BMP085_ADDRESS, 2);
-  while(Wire.available()<2)
-    ;
-  msb = Wire.read();
-  lsb = Wire.read();
-
-  return (int) msb<<8 | lsb;
-}
-
-// Read the uncompensated temperature value
-unsigned int bmp085ReadUT(){
-  unsigned int ut;
-
-  // Write 0x2E into Register 0xF4
-  // This requests a temperature reading
-  Wire.beginTransmission(BMP085_ADDRESS);
-  Wire.write(0xF4);
-  Wire.write(0x2E);
-  Wire.endTransmission();
-
-  // Wait at least 4.5ms
-  delay(5);
-
-  // Read two bytes from registers 0xF6 and 0xF7
-  ut = bmp085ReadInt(0xF6);
-  return ut;
-}
-
-// Read the uncompensated pressure value
-unsigned long bmp085ReadUP(){
-
-  unsigned char msb, lsb, xlsb;
-  unsigned long up = 0;
-
-  // Write 0x34+(OSS<<6) into register 0xF4
-  // Request a pressure reading w/ oversampling setting
-  Wire.beginTransmission(BMP085_ADDRESS);
-  Wire.write(0xF4);
-  Wire.write(0x34 + (OSS<<6));
-  Wire.endTransmission();
-
-  // Wait for conversion, delay time dependent on OSS
-  delay(2 + (3<<OSS));
-
-  // Read register 0xF6 (MSB), 0xF7 (LSB), and 0xF8 (XLSB)
-  msb = bmp085Read(0xF6);
-  lsb = bmp085Read(0xF7);
-  xlsb = bmp085Read(0xF8);
-
-  up = (((unsigned long) msb << 16) | ((unsigned long) lsb << 8) | (unsigned long) xlsb) >> (8-OSS);
-
-  return up;
-}
-
-void writeRegister(int deviceAddress, byte address, byte val) {
-  Wire.beginTransmission(deviceAddress); // start transmission to device 
-  Wire.write(address);       // send register address
-  Wire.write(val);         // send value to write
-  Wire.endTransmission();     // end transmission
-}
-
-int readRegister(int deviceAddress, byte address){
-
-  int v;
-  Wire.beginTransmission(deviceAddress);
-  Wire.write(address); // register to read
-  Wire.endTransmission();
-
-  Wire.requestFrom(deviceAddress, 1); // read a byte
-
-  while(!Wire.available()) {
-    // waiting
-  }
-
-  v = Wire.read();
-  return v;
-}
-#endif
-
-#ifdef COMP_DHT11
-
-bool getdht11()
-{
-    byte dht11_dat[5];
-    byte dht11_in;
-    byte i;
-    // start condition
-    // 1. pull-down i/o pin from 18ms
-    PORTC &= ~_BV(DHT11_PIN);
-    delay(18);
-    PORTC |= _BV(DHT11_PIN);
-    delayMicroseconds(40);
-
-    DDRC &= ~_BV(DHT11_PIN);
-    delayMicroseconds(40);
-
-    dht11_in = PINC & _BV(DHT11_PIN);
-
-    if(dht11_in){
-      Serial.println("dht11 start condition 1 not met");
-      fehler = fehler +1;
-      return false;
-    }
-    delayMicroseconds(80);
-
-    dht11_in = PINC & _BV(DHT11_PIN);
-
-    if(!dht11_in){
-      Serial.println("dht11 start condition 2 not met");
-      fehler = fehler +1;
-      return false;
-    }
-    delayMicroseconds(80);
-    // now ready for data reception
-    for (i=0; i<5; i++)
-      dht11_dat[i] = read_dht11_dat();
-
-    DDRC |= _BV(DHT11_PIN);
-    PORTC |= _BV(DHT11_PIN);
-
-    byte dht11_check_sum = dht11_dat[0]+dht11_dat[1]+dht11_dat[2]+dht11_dat[3];
-    // check check_sum
-    if(dht11_dat[4]!= dht11_check_sum)
-    {
-//      Serial.println("DHT11 checksum error");
-      return false;
-    }
-    temp1[0]=dht11_dat[2];
-    temp2[0]=dht11_dat[3];
-    hum1[0]=dht11_dat[0];
-    hum2[0]=dht11_dat[1];
-/*    Serial.print("Temperature: ");
-    Serial.print(temp1[0]);
-    Serial.print(".");
-    Serial.print(temp2[0]);
-    Serial.print(" C");
-    Serial.print("    ");
-    Serial.print("Humidity: ");
-    Serial.print(hum1[0]);
-    Serial.print(".");
-    Serial.print(hum2[0]);
-    Serial.println("%");
-*/
-  // Sensor ID & Channel
-  byte id = 14;
-  // (Propably) Battery State
-  bool battery = 0;
-  // Trend
-//  byte trend = 0;
-  // Trigger
-  bool forcedSend = 1;
-byte trend = 0;
-
-  // Temperature & Humidity
-//    int temperature = (int)((temp3231 * 10) + .5);
-    int temperature = (int) temp1[0]*10; 
-    byte humidity = hum1[0];
-    sprintf(tmp,"K%02X%01d%01d%01d%+04d%02d", id, battery, trend, forcedSend, temperature, humidity);
-//    Serial.println(tmp);
-  message = tmp;
-  available = true;
-  return true;
-}
-
-byte read_dht11_dat()
-{
-  byte i = 0;
-  byte result=0;
-  for(i=0; i< 8; i++){
-
-    while(!(PINC & _BV(DHT11_PIN)));  // wait for 50us
-    delayMicroseconds(30);
-
-    if(PINC & _BV(DHT11_PIN)) 
-      result |=(1<<(7-i));
-    while((PINC & _BV(DHT11_PIN)));  // wait '1' finish
-
-  }
-  return result;
-}
-#endif
-
-// Wofuer ist diese Funktion ????
-// float calcAltitude(float pressure){
-
-//   float A = pressure/101325;
-//   float B = 1/5.25588;
-//   float C = pow(A,B);
-//   C = 1 - C;
-//   C = C /0.0000225577;
-
-//   return C;
-// }
 
