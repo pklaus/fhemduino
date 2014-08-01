@@ -36,7 +36,7 @@
 
 // --- Configuration ---------------------------------------------------------
 #define PROGNAME               "FHEMduino"
-#define PROGVERS               "2.1c"    // Full versionstring is build in handle command function
+#define PROGVERS               "2.1d"    // Full versionstring is build in handle command function
 
 #if defined(__AVR_ATmega32U4__)          // on the leonardo and other ATmega32U4 devices interrupt 0 is on dpin 3
 #define PIN_RECEIVE            3
@@ -45,7 +45,12 @@
 #endif
 
 #define PIN_LED                13
+
+#if defined(__AVR_ATmega32U4__)          // 
+#define PIN_SEND               10        // on some 32U Devices, there is no PIN 11, so we use 10 here.
+#else
 #define PIN_SEND               11
+#endif
 
 //#define DEBUG           // Compile sketch witdh Debug informations
 #ifdef DEBUG
@@ -53,6 +58,7 @@
 #else
 #define BAUDRATE               9600
 #endif
+
 
 #define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
@@ -64,8 +70,10 @@
 #define COMP_TX70DTH    // Compile sketch with TX70DTH (Aldi) support
 #define COMP_IT_TX      // Compile sketch with Intertechno TX2/3/4 support
 
-//#define COMP_OSV2       // Compile sketch with OSV2 Support
-//#define COMP_Cresta     // Compile sketch with Cresta Support (currently not implemented, just for future use)
+#define COMP_OSV2       // Compile sketch with OSV2 Support
+#define COMP_Cresta     // Compile sketch with Cresta Support (currently not implemented, just for future use)
+#define USE_OREGON_41   // Use oregon_41 Module which is already included in fhem. If not defined, the 14_fhemduino_oregon module will be used.
+
 
 // Future enhancement
 //#define COMP_OSV3     // Compile sketch with OSV3 Support (currently not implemented, just for future use)
@@ -659,13 +667,14 @@ void handleInterrupt() {
 #ifdef COMP_OSV2
   if (orscV2.nextPulse(duration) )
   {
-    byte len;
+    uint8_t len;
     const byte* data = orscV2.getData(len);
 
     char tmp[36]="";
-    int tmp_len = 0;
-    strcat(tmp, "OSV2:");
-    tmp_len = 5;
+    char len_field[2]="";
+    uint8_t tmp_len = 0;
+    //strcat(tmp, "OSV2:");
+    //tmp_len = 5;
 #ifdef DEBUG
     Serial.print("HEXStream");
 #endif
@@ -681,13 +690,27 @@ void handleInterrupt() {
 
 #ifdef DEBUG
     Serial.println(" ");
+    Serial.println("Length:");
 #endif
 
-    message = tmp;
-    available = true;
-    orscV2.resetDecoder();
-  }
+
+#ifdef USE_OREGON_41
+    message=(String(len*8, HEX));
+    message.concat(tmp);
+//    message.concat("\n");
+// Dirty hack, just to test the 41_Oregon Module
+//    Serial.println(" ");
+//    Serial.print(len*8, HEX);
+//    Serial.println(tmp);
+#else
+   message.concat("OSV2:");
+   message.concat(tmp);
 #endif
+   orscV2.resetDecoder();
+
+   available = true;
+  }
+#endif  //COMP_OSV2
 
 #ifdef COMP_Cresta
   if (cres.nextPulse(duration))
@@ -714,6 +737,8 @@ void handleInterrupt() {
     
 #ifdef DEBUG
       Serial.println(" ");
+      Serial.print("Length:");
+      Serial.println(len,HEX);
 #endif
 
     message = tmp;
@@ -1815,4 +1840,5 @@ bool receiveProtocolTX70DTH(unsigned int changeCount) {
   return true;
 }
 #endif
+
 
