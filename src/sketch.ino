@@ -883,16 +883,16 @@ bool receiveProtocolKW9010(unsigned int changeCount) {
     return false;
   }
 
-  String bitmessage = hex2bin(rawcode);
+  String crcbitmessage = hex2bin(rawcode);
   
   // check Data integrity
   byte checksum = 0;
-  checksum += (byte)(bitmessage[35] << 3 | bitmessage[34] << 2 | bitmessage[33] << 1 | bitmessage[32]);
+  checksum += (byte)(crcbitmessage[35] << 3 | crcbitmessage[34] << 2 | crcbitmessage[33] << 1 | crcbitmessage[32]);
   checksum &= 0xF;
   
   byte calculatedChecksum = 0;
   for (int i = 0 ; i <= 7 ; i++) {
-    calculatedChecksum += (byte)(bitmessage[i*4 + 3] << 3 | bitmessage[i*4 + 2] << 2 | bitmessage[i*4 + 1] << 1 | bitmessage[i*4]);
+    calculatedChecksum += (byte)(crcbitmessage[i*4 + 3] << 3 | crcbitmessage[i*4 + 2] << 2 | crcbitmessage[i*4 + 1] << 1 | crcbitmessage[i*4]);
   }
   calculatedChecksum &= 0xF;
 
