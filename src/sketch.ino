@@ -37,11 +37,12 @@
 // 2014-07-16 - Added Tchibo TCM234759 door bell
 // 2014-07-17 - Added  * Heidemann HX Pocket (70283). May work also with other Heidemann HX series door bells
 // 2014-07-31 - Fixed bug in KW9010 / crcValid not needed any more
-// 2014-08-05 - Added temperature sensor AURIOL (Lidl Version: 09/2013) 
+// 2014-08-05 - Added temperature sensor AURIOL (Lidl Version: 09/2013)
+// 2014-08-06 - Implemented uptime
 
 // --- Configuration ---------------------------------------------------------
 #define PROGNAME               "FHEMduino"
-#define PROGVERS               "2.2b"
+#define PROGVERS               "2.2c"
 
 #if defined(__AVR_ATmega32U4__)          //on the leonardo and other ATmega32U4 devices interrupt 0 is on dpin 3
 #define PIN_RECEIVE            3
@@ -405,6 +406,9 @@ void decoders(unsigned int duration) {
     repeatCount++;
     changeCount--;
     if (repeatCount == 2) {
+      // update uptime. Could be every where, but still put here
+      uptime(millis(), false);
+
 #ifdef COMP_KW9010
       if (rc == false) {
         rc = receiveProtocolKW9010(changeCount);
@@ -620,6 +624,9 @@ void HandleCommand(String cmd)
     Serial.println(cmd);
   }
 #endif
+  else if (cmd.equals("t")) {
+    uptime(millis(), true);
+  }
     else if (cmd.equals("XQ")) {
     disableReceive();
     Serial.flush();
@@ -628,9 +635,36 @@ void HandleCommand(String cmd)
   // Print Available Commands
   else if (cmd.equals("?"))
   {
-    Serial.println(F("? Use one of V is isr sd sdr R q"));
+    Serial.println(F("? Use one of V is isr sd sdr tx txr hx hxr t R q"));
   }
   cmdstring = "";
+}
+
+void uptime(unsigned long timepassed, bool Print)
+{
+  static unsigned long time_in_secs=0;
+  static unsigned long temps=0;
+  unsigned long secs=0;
+
+  secs = timepassed/1000;
+  
+  if (secs < temps) {
+     time_in_secs += secs;
+  } else {
+     time_in_secs = secs;
+  }
+
+  temps = timepassed/1000;
+  
+  if (Print) {
+    //Display results
+    String cPrint = "00000000";
+    cPrint += String(time_in_secs,HEX);
+    int StringStart = cPrint.length()-8;
+    cPrint = cPrint.substring(StringStart);
+    cPrint.toUpperCase();
+    Serial.println(cPrint);
+  }
 }
 
 // Get free RAM of UC
@@ -943,6 +977,11 @@ bool receiveProtocolNC_WS(unsigned int changeCount) {
   rawcode = RawMessage(timings, NCWS_MESSAGELENGTH, NCWS_ZERO - NCWS_GLITCH, NCWS_ZERO + NCWS_GLITCH, NCWS_ONE - NCWS_GLITCH, NCWS_ONE + NCWS_GLITCH);
   if (rawcode == "") {
       return false;
+  }
+
+  // First 4 bits always 0101 == 5
+  if (rawcode[0] != '5') {
+    return false;
   }
 
   message = "W03";
