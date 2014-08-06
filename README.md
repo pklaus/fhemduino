@@ -23,3 +23,4 @@ Aktor                                                            |      |       
                                                                  |--------->14_FHEMduino_FA20RF.pm  -> smoke detectors FA20RF / RM150RF / Brennenstuhl BR 102-F / KD101
                                                                  |--------->14_FHEMduino_HX.pm      -> Heidemann HX series door bells
                                                                  |--------->14_FHEMduino_TCM.pm     -> Tchibo TCM234759 door bell
+
