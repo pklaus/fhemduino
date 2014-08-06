@@ -28,17 +28,22 @@
 //            - Optimized duration calculation and saved variable 'time'.
 // 2014-06-22 - Added Compiler Switch for __AVR_ATmega32U4__ DCF Pin#2
 // 2014-06-24 - Capsulatet all decoder with #defines
-// 2014-06-24 - Added receive support for smoke detectors FA20RF / RM150RF (KD101 not verified)
-// 2014-06-24 - Added send / activate support for smoke detectors FA20RF / RM150RF (KD101 not verified) -- not yet inetgrated in FHEM-Modul
+// 2014-06-24 - Added send / activate support for smoke detectors FA20RF / RM150RF / Brennenstuhl BR 102-F / (KD101 not verified)
 // 2014-06-24 - Integrated mick6300 developments LIFETEC support
 // 2014-06-24 - Integrated mick6300 developments TX70DTH (Aldi) support
 // 2014-07-04 - Integrated Intertechno TX2/3/4 support, see CUL_TX and http://www.f6fbb.org/domo/sensors/tx3_th.php
+// 2014-07-15 - Changed Stop-Bit interpretaion for smoke detectors FA20RF / RM150RF / Brennenstuhl BR 102-F / KD101
+// 2014-07-16 - Return value for Lifetec changed to distribute to 14_FEHMduino_Lifetec.pm
+// 2014-07-16 - Added Tchibo TCM234759 door bell
+// 2014-07-17 - Added  * Heidemann HX Pocket (70283). May work also with other Heidemann HX series door bells
+// 2014-07-31 - Fixed bug in KW9010 / crcValid not needed any more
+// 2014-08-05 - Added temperature sensor AURIOL (Lidl Version: 09/2013) 
 
 // --- Configuration ---------------------------------------------------------
 #define PROGNAME               "FHEMduino"
-#define PROGVERS               "2.1d"    // Full versionstring is build in handle command function
+#define PROGVERS               "2.2b"
 
-#if defined(__AVR_ATmega32U4__)          // on the leonardo and other ATmega32U4 devices interrupt 0 is on dpin 3
+#if defined(__AVR_ATmega32U4__)          //on the leonardo and other ATmega32U4 devices interrupt 0 is on dpin 3
 #define PIN_RECEIVE            3
 #else
 #define PIN_RECEIVE            2
@@ -46,11 +51,11 @@
 
 #define PIN_LED                13
 
-#if defined(__AVR_ATmega32U4__)          // 
-#define PIN_SEND               10        // on some 32U Devices, there is no PIN 11, so we use 10 here.
-#else
-#define PIN_SEND               11
-#endif
+#if defined(__AVR_ATmega32U4__)          //  
+#define PIN_SEND               10        // on some 32U Devices, there is no PIN 11, so we use 10 here. 
+#else 
+#define PIN_SEND               11 
+#endif 
 
 //#define DEBUG           // Compile sketch witdh Debug informations
 #ifdef DEBUG
@@ -58,7 +63,6 @@
 #else
 #define BAUDRATE               9600
 #endif
-
 
 #define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
@@ -68,18 +72,21 @@
 #define COMP_EUROCHRON  // Compile sketch with EUROCHRON / Tchibo support
 #define COMP_LIFETEC    // Compile sketch with LIFETEC support
 #define COMP_TX70DTH    // Compile sketch with TX70DTH (Aldi) support
+#define COMP_AURIOL     // Compile sketch with AURIOL (Lidl Version: 09/2013); only temperature
 #define COMP_IT_TX      // Compile sketch with Intertechno TX2/3/4 support
+#define COMP_TCM        // Compile sketch with Tchibo door bell support
+#define COMP_HX         // Compile sketch with Heidemann HX Pocket (70283) door bell support
 
 #define COMP_OSV2       // Compile sketch with OSV2 Support
 #define COMP_Cresta     // Compile sketch with Cresta Support (currently not implemented, just for future use)
 #define USE_OREGON_41   // Use oregon_41 Module which is already included in fhem. If not defined, the 14_fhemduino_oregon module will be used.
-
 
 // Future enhancement
 //#define COMP_OSV3     // Compile sketch with OSV3 Support (currently not implemented, just for future use)
 //#define COMP_Kaku     // Compile sketch with Kaku  Support (currently not implemented, just for future use)
 //#define COMP_HEZ      // Compile sketch with Homeeasy Support (currently not implemented, just for future use)
 //#define COMP_XRF      // Compile sketch with XTF Support (currently not implemented, just for future use)
+
 
 /*
  * Modified code to fit info fhemduino - Sidey
@@ -90,6 +97,7 @@
  *
 */
 
+/* Currently not working, this is for future Mode
 #include "decoders.h";
 #ifdef COMP_OSV2     // Compile sketch with OSV3 Support (currently not implemented, just for future use)
 OregonDecoderV2 orscV2;
@@ -110,23 +118,441 @@ HezDecoder hez;
 #ifdef COMP_XRF
 XrfDecoder xrf;
 #endif
+*/
 
-/*
- * FA20RF
- */
-static unsigned int FArepetition = 10;
+class DecodeOOK {
+  protected:
+    byte total_bits, bits, flip, state, pos, data[25];
+
+    virtual char decode (word width) = 0;
+
+  public:
+
+    enum { UNKNOWN, T0, T1, T2, T3, OK, DONE };
+
+    DecodeOOK () {
+      resetDecoder();
+    }
+
+    bool nextPulse (word width) {
+      if (state != DONE)
+
+        switch (decode(width)) {
+          case -1: resetDecoder(); break;
+          case 1:  done(); break;
+        }
+      return isDone();
+    }
+
+    bool isDone () const {
+      return state == DONE;
+    }
+
+    const byte* getData (byte& count) const {
+      count = pos;
+      return data;
+    }
+
+    void resetDecoder () {
+      total_bits = bits = pos = flip = 0;
+      state = UNKNOWN;
+    }
+
+    // add one bit to the packet data buffer
+
+    virtual void gotBit (char value) {
+      total_bits++;
+      byte *ptr = data + pos;
+      *ptr = (*ptr >> 1) | (value << 7);
+
+      if (++bits >= 8) {
+        bits = 0;
+        if (++pos >= sizeof data) {
+          resetDecoder();
+          return;
+        }
+      }
+      state = OK;
+    }
+
+    // store a bit using Manchester encoding
+    void manchester (char value) {
+      flip ^= value; // manchester code, long pulse flips the bit
+      gotBit(flip);
+    }
+
+    // move bits to the front so that all the bits are aligned to the end
+    void alignTail (byte max = 0) {
+      // align bits
+      if (bits != 0) {
+        data[pos] >>= 8 - bits;
+        for (byte i = 0; i < pos; ++i)
+          data[i] = (data[i] >> bits) | (data[i + 1] << (8 - bits));
+        bits = 0;
+      }
+      // optionally shift bytes down if there are too many of 'em
+      if (max > 0 && pos > max) {
+        byte n = pos - max;
+        pos = max;
+        for (byte i = 0; i < pos; ++i)
+          data[i] = data[i + n];
+      }
+    }
+
+    void reverseBits () {
+      for (byte i = 0; i < pos; ++i) {
+        byte b = data[i];
+        for (byte j = 0; j < 8; ++j) {
+          data[i] = (data[i] << 1) | (b & 1);
+          b >>= 1;
+        }
+      }
+    }
+
+    void reverseNibbles () {
+      for (byte i = 0; i < pos; ++i)
+        data[i] = (data[i] << 4) | (data[i] >> 4);
+    }
+
+    void done () {
+      while (bits)
+        gotBit(0); // padding
+      state = DONE;
+    }
+};
+
+#ifdef COMP_OSV2
+class OregonDecoderV2 : public DecodeOOK {
+  public:
+
+    OregonDecoderV2() {}
+
+    // add one bit to the packet data buffer
+    virtual void gotBit (char value) {
+      if (!(total_bits & 0x01))
+      {
+        data[pos] = (data[pos] >> 1) | (value ? 0x80 : 00);
+      }
+      total_bits++;
+      pos = total_bits >> 4;
+      if (pos >= sizeof data) {
+        resetDecoder();
+        return;
+      }
+      state = OK;
+    }
+
+    virtual char decode (word width) {
+      if (200 <= width && width < 1200) {
+        //Serial.print("Dauer="); Serial.println(width);
+        //Serial.println(width);
+        byte w = width >= 700;
+
+        switch (state) {
+          case UNKNOWN:
+            if (w != 0) {
+              // Long pulse
+              ++flip;
+            } else if (w == 0 && 24 <= flip) {
+              // Short pulse, start bit
+              flip = 0;
+              state = T0;
+            } else {
+              // Reset decoder
+              return -1;
+            }
+            break;
+          case OK:
+            if (w == 0) {
+              // Short pulse
+              state = T0;
+            } else {
+              // Long pulse
+              manchester(1);
+            }
+            break;
+          case T0:
+            if (w == 0) {
+              // Second short pulse
+              manchester(0);
+            } else {
+              // Reset decoder
+              return -1;
+            }
+            break;
+        }
+      } else if (width >= 2500  && pos >= 8) {
+        return 1;
+      } else {
+        return -1;
+      }
+      return 0;
+    }
+};
+OregonDecoderV2 orscV2;
+#endif
+
+#ifdef COMP_OSV3
+class OregonDecoderV3 : public DecodeOOK {
+  public:
+    OregonDecoderV3() {}
+
+    // add one bit to the packet data buffer
+    virtual void gotBit (char value) {
+      data[pos] = (data[pos] >> 1) | (value ? 0x80 : 00);
+      total_bits++;
+      pos = total_bits >> 3;
+      if (pos >= sizeof data) {
+        resetDecoder();
+        return;
+      }
+      state = OK;
+    }
+
+    virtual char decode (word width) {
+      if (200 <= width && width < 1200) {
+        byte w = width >= 700;
+        switch (state) {
+          case UNKNOWN:
+            if (w == 0)
+              ++flip;
+            else if (32 <= flip) {
+              flip = 1;
+              manchester(1);
+            } else
+              return -1;
+            break;
+          case OK:
+            if (w == 0)
+              state = T0;
+            else
+              manchester(1);
+            break;
+          case T0:
+            if (w == 0)
+              manchester(0);
+            else
+              return -1;
+            break;
+        }
+      } else {
+        return -1;
+      }
+      return  total_bits == 80 ? 1 : 0;
+    }
+};
+OregonDecoderV3 orscV3;
+#endif
+
+#ifdef COMP_Cresta
+class CrestaDecoder : public DecodeOOK {
+  public:
+    CrestaDecoder () {}
+
+    const byte* getData (byte& count) const {
+
+      count = pos;
+      return data;
+    }
+
+    virtual char decode (word width) {
+      if (200 <= width && width < 1300) {
+        byte w = width >= 750;
+        switch (state) {
+          case UNKNOWN:
+            if (w == 1)
+              ++flip;
+            else if (2 <= flip && flip <= 10)
+              state = T0;
+            else
+              return -1;
+            break;
+          case OK:
+            if (w == 0)
+              state = T0;
+            else
+              gotBit(1);
+            break;
+          case T0:
+            if (w == 0)
+              gotBit(0);
+            else
+              return -1;
+            break;
+        }
+      } else if (width >= 2500 && pos >= 7)
+        return 1;
+      else
+        return -1;
+      return 0;
+    }
+
+    virtual void gotBit (char value) {
+
+      if (++bits <= 8) {
+
+        total_bits++;
+        byte *ptr = data + pos;
+        *ptr = (*ptr >> 1) | (value << 7);
+      }
+      else {
+
+        bits = 0;
+        if (++pos >= sizeof data) {
+          resetDecoder();
+          return;
+        }
+      }
+      state = OK;
+    }
+
+
+};
+CrestaDecoder cres;
+#endif
+
+#ifdef COMP_KAKU
+class KakuDecoder : public DecodeOOK {
+  public:
+    KakuDecoder () {}
+
+    virtual char decode (word width) {
+      if (180 <= width && width < 450 || 950 <= width && width < 1250) {
+        byte w = width >= 700;
+        switch (state) {
+          case UNKNOWN:
+          case OK:
+            if (w == 0)
+              state = T0;
+            else
+              return -1;
+            break;
+          case T0:
+            if (w)
+              state = T1;
+            else
+              return -1;
+            break;
+          case T1:
+            state += w + 1;
+            break;
+          case T2:
+            if (w)
+              gotBit(0);
+            else
+              return -1;
+            break;
+          case T3:
+            if (w == 0)
+              gotBit(1);
+            else
+              return -1;
+            break;
+        }
+      } else if (width >= 2500 && 8 * pos + bits == 12) {
+        for (byte i = 0; i < 4; ++i)
+          gotBit(0);
+        alignTail(2);
+        return 1;
+      } else
+        return -1;
+      return 0;
+    }
+};
+KakuDecoder kaku;
+#endif
+
+#ifdef COMP_XRF
+class XrfDecoder : public DecodeOOK {
+  public:
+    XrfDecoder () {}
+
+    // see also http://davehouston.net/rf.htm
+    virtual char decode (word width) {
+      if (width > 2000 && pos >= 4)
+        return 1;
+      if (width > 5000)
+        return -1;
+      if (width > 4000 && state == UNKNOWN)
+        state = OK;
+      else if (350 <= width && width < 1800) {
+        byte w = width >= 720;
+        switch (state) {
+          case OK:
+            if (w == 0)
+              state = T0;
+            else
+              return -1;
+            break;
+          case T0:
+            gotBit(w);
+            break;
+        }
+      } else
+        return -1;
+      return 0;
+    }
+};
+XrfDecoder xrf;
+#endif
+
+#ifdef COMP_HEZ
+class HezDecoder : public DecodeOOK {
+  public:
+    HezDecoder () {}
+
+    // see also http://homeeasyhacking.wikia.com/wiki/Home_Easy_Hacking_Wiki
+    virtual char decode (word width) {
+      if (200 <= width && width < 1200) {
+        byte w = width >= 600;
+        gotBit(w);
+      } else if (width >= 5000 && pos >= 5 /*&& 8 * pos + bits == 50*/) {
+        for (byte i = 0; i < 6; ++i)
+          gotBit(0);
+        alignTail(7); // keep last 56 bits
+        return 1;
+      } else
+        return -1;
+      return 0;
+    }
+};
+HezDecoder hez;
+#endif
 
 /*
  * PT2262
  */
+#ifdef COMP_PT2262
 static unsigned int ITrepetition = 3;
+#endif
+
+/*
+ * FA20RF
+ */
+#ifdef COMP_FA20RF
+static unsigned int FArepetition = 10;
+#endif
+
+/*
+ * TCM234759
+ */
+#ifdef COMP_TCM
+static unsigned int TCMrepetition = 19;
+#endif
+
+/*
+ * Heidemann HX Pocket (70283)
+ */
+#ifdef COMP_HX
+static unsigned int HXrepetition = 19;
+#endif
 
 /*
  * Weather sensors
  */
 #define MAX_CHANGES            90
-unsigned int timings5000[MAX_CHANGES];      //  Startbit_5000
-unsigned int timings2500[MAX_CHANGES];      //  Startbit_2500
+unsigned int timings[MAX_CHANGES];
+unsigned int timings2500[MAX_CHANGES];
 
 String cmdstring;
 volatile bool available = false;
@@ -260,10 +686,26 @@ void handleInterrupt() {
 #ifdef COMP_IT_TX
   IT_TX(duration);
 #endif
-  Startbit_5000(duration);
-  Startbit_2500(duration);
+
+  decoders(duration);
+  decoders2500(duration);
 
 #ifdef COMP_OSV2
+  COMP_OSV2_HANDLER (duration);
+#endif
+
+#ifdef COMP_Cresta
+  COMP_Cresta_HANDLER (duration);
+#endif
+
+  lastTime += duration;
+}
+
+/*
+ * call Oregon decoder when valid timings sequence available
+ */
+#ifdef COMP_OSV2
+void COMP_OSV2_HANDLER (unsigned int duration) {
   if (orscV2.nextPulse(duration) )
   {
     uint8_t len;
@@ -297,7 +739,7 @@ void handleInterrupt() {
     message=(String(len*8, HEX));
     message.concat(tmp);
 //    message.concat("\n");
-// Dirty hack, just to test the 41_Oregon Module
+//    Dirty hack, just to test the 41_Oregon Module
 //    Serial.println(" ");
 //    Serial.print(len*8, HEX);
 //    Serial.println(tmp);
@@ -309,9 +751,11 @@ void handleInterrupt() {
 
    available = true;
   }
-#endif  //COMP_OSV2
+}
+#endif
 
 #ifdef COMP_Cresta
+void COMP_Cresta_HANDLER (unsigned int duration) {
   if (cres.nextPulse(duration))
   {
     byte len;
@@ -344,10 +788,274 @@ void handleInterrupt() {
     available = true;
   }
   cres.resetDecoder();
+}
 #endif
 
-  lastTime += duration;
+/*
+ * call decoders when valid timings sequence available
+ */
+void decoders(unsigned int duration) {
+#define STARTBIT_TIME   5000
+#define STARTBIT_OFFSET 200
+
+  static unsigned int changeCount;
+  static unsigned int repeatCount;
+  bool rc = false;
+
+  if (duration > STARTBIT_TIME && duration > timings[0] - STARTBIT_OFFSET && duration < timings[0] + STARTBIT_OFFSET) {
+    repeatCount++;
+    changeCount--;
+    if (repeatCount == 2) {
+#ifdef COMP_KW9010
+      if (rc == false) {
+        rc = receiveProtocolKW9010(changeCount);
+      }
+#endif
+#ifdef COMP_NC_WS
+      if (rc == false) {
+        rc = receiveProtocolNC_WS(changeCount);
+      }
+#endif
+#ifdef COMP_EUROCHRON
+      if (rc == false) {
+        rc = receiveProtocolEuroChron(changeCount);
+      }
+#endif
+#ifdef COMP_PT2262
+      if (rc == false) {
+        rc = receiveProtocolPT2262(changeCount);
+      }
+#endif
+#ifdef COMP_LIFETEC
+      if (rc == false) {
+        rc = receiveProtocolLIFETEC(changeCount);
+      }
+#endif
+#ifdef COMP_TCM
+      if (rc == false) {
+        rc = receiveProtocolTCM(changeCount);
+      }
+#endif
+#ifdef COMP_HX
+      if (rc == false) {
+        rc = receiveProtocolHX(changeCount);
+      }
+#endif
+#ifdef COMP_AURIOL
+      if (rc == false) {
+        rc = receiveProtocolAURIOL(changeCount);
+      }
+#endif
+      if (rc == false) {
+        // rc = next decoder;
+      }
+      repeatCount = 0;
+    }
+    changeCount = 0;
+  } 
+  else if (duration > STARTBIT_TIME) {
+    changeCount = 0;
+  }
+
+  if (changeCount >= MAX_CHANGES) {
+    changeCount = 0;
+    repeatCount = 0;
+  }
+  timings[changeCount++] = duration;
 }
+
+/*
+ * call decoders when valid timings sequence available
+ */
+void decoders2500(unsigned int duration) {
+#define LOW_STARTBIT_TIME  2500
+#define HIGH_STARTBIT_TIME 2500
+#define STARTBIT_OFFSET 200
+
+  static unsigned int changeCount;
+  static unsigned int repeatCount;
+  bool rc = false;
+
+  if ((duration > LOW_STARTBIT_TIME && duration < HIGH_STARTBIT_TIME) && duration > timings2500[0] - STARTBIT_OFFSET && duration < timings2500[0] + STARTBIT_OFFSET) {
+    repeatCount++;
+    changeCount--;
+    if (repeatCount == 2) {
+#ifdef COMP_TX70DTH
+      if (rc == false) {
+        rc = receiveProtocolTX70DTH(changeCount);
+      }
+#endif
+      if (rc == false) {
+        // rc = next decoder;
+      }
+      repeatCount = 0;
+    }
+    changeCount = 0;
+  } 
+  else if (duration > STARTBIT_TIME) {
+    changeCount = 0;
+  }
+
+  if (changeCount >= MAX_CHANGES) {
+    changeCount = 0;
+    repeatCount = 0;
+  }
+  timings2500[changeCount++] = duration;
+}
+
+/*
+ * Serial Command Handling
+ */
+void serialEvent()
+{
+  while (Serial.available())
+  {
+    char inChar = (char)Serial.read();
+    switch(inChar)
+    {
+    case '\n':
+    case '\r':
+    case '\0':
+    case '#':
+      HandleCommand(cmdstring);
+      break;
+    default:
+      cmdstring = cmdstring + inChar;
+    }
+  }
+}
+
+void HandleCommand(String cmd)
+{
+  // Version Information
+  if (cmd.equals("V"))
+  {
+    Serial.println(F("V " PROGVERS " FHEMduino - compiled at " __DATE__ " " __TIME__));
+  }
+  // Print free Memory
+  else if (cmd.equals("R")) {
+    Serial.print(F("R"));
+    Serial.println(freeRam());
+  }
+#ifdef COMP_FA20RF
+  // Set FA20RF Repetition
+  else if (cmd.startsWith("sdr"))
+  {
+    char msg[3];
+    cmd.substring(3).toCharArray(msg,3);
+    FArepetition = atoi(msg);
+    Serial.println(cmd);
+  }  
+  // Switch FA20RF Devices
+  else if (cmd.startsWith("sd"))
+  {
+    digitalWrite(PIN_LED,HIGH);
+    char msg[30];
+    cmd.substring(2).toCharArray(msg,30);
+    sendFA20RF(msg);
+    digitalWrite(PIN_LED,LOW);
+    Serial.println(msg);
+  }
+#endif
+#ifdef COMP_PT2262
+  // Set Intertechno Repetition
+  else if (cmd.startsWith("isr"))
+  {
+    char msg[3];
+    cmd.substring(3).toCharArray(msg,3);
+    ITrepetition = atoi(msg);
+    Serial.println(cmd);
+  }  
+  // Switch Intertechno Devices
+  else if (cmd.startsWith("is"))
+  {
+    digitalWrite(PIN_LED,HIGH);
+    char msg[13];
+    cmd.substring(2).toCharArray(msg,13);
+    sendPT2262(msg);
+    digitalWrite(PIN_LED,LOW);
+    Serial.println(cmd);
+  }
+#endif
+#ifdef COMP_TCM
+  // Set Intertechno Repetition
+  else if (cmd.startsWith("tcr"))
+  {
+    char msg[3];
+    cmd.substring(3).toCharArray(msg,3);
+    TCMrepetition = atoi(msg);
+    Serial.println(cmd);
+  }  
+  // Switch Intertechno Devices
+  else if (cmd.startsWith("tc"))
+  {
+    // tc11011100111011100001#
+    digitalWrite(PIN_LED,HIGH);
+    char msg[21];
+    cmd.substring(2).toCharArray(msg,21);
+    // sendTCM(msg);
+    sendStd(msg, TCMrepetition, 548, 1404, 508, 760, 1160, 47612);
+    digitalWrite(PIN_LED,LOW);
+    Serial.println(cmd);
+  }
+#endif
+#ifdef COMP_HX
+  // Set Intertechno Repetition
+  else if (cmd.startsWith("hxr"))
+  {
+    char msg[3];
+    cmd.substring(3).toCharArray(msg,3);
+    HXrepetition = atoi(msg);
+    Serial.println(cmd);
+  }  
+  // Switch Intertechno Devices
+  else if (cmd.startsWith("hx"))
+  {
+    // hx110111110001#
+    digitalWrite(PIN_LED,HIGH);
+    char msg[15];
+    cmd.substring(2).toCharArray(msg,15);
+    // sendHX(msg);
+    sendStd(msg, HXrepetition, 270, 300, 600, 720, 260, 5000);
+    digitalWrite(PIN_LED,LOW);
+    Serial.println(cmd);
+  }
+#endif
+    else if (cmd.equals("XQ")) {
+    disableReceive();
+    Serial.flush();
+    Serial.end();
+  }
+  // Print Available Commands
+  else if (cmd.equals("?"))
+  {
+    Serial.println(F("? Use one of V is isr sd sdr R q"));
+  }
+  cmdstring = "";
+}
+
+// Get free RAM of UC
+int freeRam () {
+  extern int __heap_start, *__brkval; 
+  int v; 
+  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
+}
+
+/*
+ * Message Handling
+ */
+bool messageAvailable() {
+  return (available && (message.length() > 0));
+}
+
+void resetAvailable() {
+  available = false;
+  message = "";
+}
+
+/*-----------------------------------------------------------------------------------------------
+/* Devices with temperatur / humidity functionality
+-----------------------------------------------------------------------------------------------*/
 
 #ifdef COMP_IT_TX
 /*
@@ -368,14 +1076,8 @@ void IT_TX(unsigned int duration) {
   if ((sDuration > 1550 - 200 && sDuration < 1550 + 200) || (sDuration > 2150 - 200 && sDuration < 2150 + 200)) {
     if ((duration > 520 - 100 && duration < 520 + 100) || (duration > 1250 - 100 && duration < 1250 + 100) || (duration > 950 - 100 && duration < 950 + 100)) {
       if (changeCount == 0 ) {
-//        Serial.print(changeCount);
-//        Serial.print(" ");
-//        Serial.println(fDuration);
         timingsTX[changeCount++] = fDuration;
       }
-//      Serial.print(changeCount);
-//      Serial.print(" ");
-//      Serial.println(duration);
       timingsTX[changeCount++] = duration;
     }
 
@@ -391,9 +1093,6 @@ void IT_TX(unsigned int duration) {
   fDuration = duration;
 }
 
-/*
- * Intertechno TX2_3 Decoder
- */
 void receiveProtocolIT_TX(unsigned int changeCount) {
 #define TX_ONE    520
 #define TX_ZERO   1250
@@ -422,7 +1121,6 @@ void receiveProtocolIT_TX(unsigned int changeCount) {
   
   // Startsequence 0000 1010 = 0xA
   if (code != 10) {
-    Serial.println("Fehler");
     return;
   }
   code = 0;
@@ -506,7 +1204,6 @@ void receiveProtocolIT_TX(unsigned int changeCount) {
       code |= 1;
     }
     else {
-      Serial.println("F");
       return;
     }
   }
@@ -522,6 +1219,341 @@ void receiveProtocolIT_TX(unsigned int changeCount) {
 }
 #endif
 
+#ifdef COMP_KW9010
+/*
+ * KW9010
+ */
+bool receiveProtocolKW9010(unsigned int changeCount) {
+#define KW9010_SYNC 9000
+#define KW9010_ONE 4000
+#define KW9010_ZERO 2000
+#define KW9010_GLITCH 200
+#define KW9010_MESSAGELENGTH 36
+
+  if (changeCount < KW9010_MESSAGELENGTH * 2) return false;
+
+  if ((timings[0] < KW9010_SYNC - KW9010_GLITCH) || (timings[0] > KW9010_SYNC + KW9010_GLITCH)) {
+    return false;
+  }
+
+#ifdef DEBUG
+  bool bitmessage[KW9010_MESSAGELENGTH];
+  if (GetBitStream(timings, bitmessage, KW9010_MESSAGELENGTH * 2, KW9010_ZERO - KW9010_GLITCH, KW9010_ZERO + KW9010_GLITCH, KW9010_ONE - KW9010_GLITCH, KW9010_ONE + KW9010_GLITCH) == false) {
+      return false;
+  }
+#endif
+
+  String rawcode;
+  rawcode = RawMessage(timings, KW9010_MESSAGELENGTH, KW9010_ZERO - KW9010_GLITCH, KW9010_ZERO + KW9010_GLITCH, KW9010_ONE - KW9010_GLITCH, KW9010_ONE + KW9010_GLITCH);
+
+  if (rawcode == "") {
+    return false;
+  }
+
+  String bitmessage = hex2bin(rawcode);
+  
+  // check Data integrity
+  byte checksum = 0;
+  checksum += (byte)(bitmessage[35] << 3 | bitmessage[34] << 2 | bitmessage[33] << 1 | bitmessage[32]);
+  checksum &= 0xF;
+  
+  byte calculatedChecksum = 0;
+  for (int i = 0 ; i <= 7 ; i++) {
+    calculatedChecksum += (byte)(bitmessage[i*4 + 3] << 3 | bitmessage[i*4 + 2] << 2 | bitmessage[i*4 + 1] << 1 | bitmessage[i*4]);
+  }
+  calculatedChecksum &= 0xF;
+
+  if (calculatedChecksum == checksum) {
+    message = "W01";
+    message += rawcode;
+    available = true;
+    return true;
+  }
+
+  return false;
+
+}
+#endif
+
+#ifdef COMP_EUROCHRON
+/*
+ * EUROCHRON
+ */
+bool receiveProtocolEuroChron(unsigned int changeCount) {
+#define Euro_SYNC   8050
+#define Euro_ONE    2020
+#define Euro_ZERO   1010
+#define Euro_GLITCH  100
+#define Euro_MESSAGELENGTH 36
+
+  if (changeCount < Euro_MESSAGELENGTH * 2) {
+    return false;
+  }
+
+  if ((timings[0] < Euro_SYNC - Euro_GLITCH) && (timings[0] > Euro_SYNC + Euro_GLITCH)) {
+    return false;
+  }
+  
+#ifdef DEBUG
+  bool bitmessage[Euro_MESSAGELENGTH];
+  if (GetBitStream(timings, bitmessage, Euro_MESSAGELENGTH * 2, Euro_ZERO - Euro_GLITCH, Euro_ZERO + Euro_GLITCH, Euro_ONE - Euro_GLITCH, Euro_ONE + Euro_GLITCH) == false) {
+      return false;
+  }
+#endif
+  String rawcode;
+  rawcode = RawMessage(timings, Euro_MESSAGELENGTH, Euro_ZERO - Euro_GLITCH, Euro_ZERO + Euro_GLITCH, Euro_ONE - Euro_GLITCH, Euro_ONE + Euro_GLITCH);
+
+  if (rawcode == "") {
+      return false;
+  }
+
+  message = "W02";
+  message += rawcode;
+  available = true;
+  return true;
+
+}
+#endif
+
+#ifdef COMP_NC_WS
+/*
+ * NC_WS / PEARL NC7159, LogiLink W0002
+ */
+bool receiveProtocolNC_WS(unsigned int changeCount) {
+#define NCWS_SYNC   9250
+#define NCWS_ONE    3900
+#define NCWS_ZERO   1950
+#define NCWS_GLITCH 100
+#define NCWS_MESSAGELENGTH 36
+
+  if (changeCount < NCWS_MESSAGELENGTH * 2) {
+    return false;
+  }
+  
+  if ((timings[0] < NCWS_SYNC - NCWS_GLITCH) || (timings[0] > NCWS_SYNC + NCWS_GLITCH)) {
+    return false;
+  }
+
+#ifdef DEBUG
+  bool bitmessage[NCWS_MESSAGELENGTH];
+  if (GetBitStream(timings, bitmessage, NCWS_MESSAGELENGTH * 2, NCWS_ZERO - NCWS_GLITCH, NCWS_ZERO + NCWS_GLITCH, NCWS_ONE - NCWS_GLITCH, NCWS_ONE + NCWS_GLITCH) == false) {
+      return false;
+  }
+#endif
+  String rawcode;
+  rawcode = RawMessage(timings, NCWS_MESSAGELENGTH, NCWS_ZERO - NCWS_GLITCH, NCWS_ZERO + NCWS_GLITCH, NCWS_ONE - NCWS_GLITCH, NCWS_ONE + NCWS_GLITCH);
+  if (rawcode == "") {
+      return false;
+  }
+
+  message = "W03";
+  message += rawcode;
+  available = true;
+  return true;
+
+}
+#endif
+
+#ifdef COMP_LIFETEC
+/*
+ * LIFETEC
+ */
+bool receiveProtocolLIFETEC(unsigned int changeCount) {
+#define LIFE_SYNC   8640
+#define LIFE_ONE    4084
+#define LIFE_ZERO   2016
+#define LIFE_GLITCH  460
+#define LIFE_MESSAGELENGTH 24
+
+  if (changeCount < LIFE_MESSAGELENGTH * 2) {
+    return false;
+  }
+  if ((timings[0] < LIFE_SYNC - LIFE_GLITCH) || (timings[0] > LIFE_SYNC + LIFE_GLITCH)) {
+    return false;
+  }
+
+#ifdef DEBUG
+  bool bitmessage[TX_MESSAGELENGTH];
+  if (GetBitStream(timings, bitmessage, LIFE_MESSAGELENGTH * 2, LIFE_ZERO - LIFE_GLITCH, LIFE_ZERO + LIFE_GLITCH, LIFE_ONE - LIFE_GLITCH, LIFE_ONE + LIFE_GLITCH) == false) {
+      return false;
+  }
+#endif
+  String rawcode;
+  rawcode = RawMessage(timings, LIFE_MESSAGELENGTH, LIFE_ZERO - LIFE_GLITCH, LIFE_ZERO + LIFE_GLITCH, LIFE_ONE - LIFE_GLITCH, LIFE_ONE + LIFE_GLITCH);
+  if (rawcode == "") {
+      return false;
+  }
+
+  message = "W04";
+  message += rawcode;
+  message += "___"; // Fill up to 12 signs
+  available = true;
+  return true;
+
+}
+#endif
+
+#ifdef COMP_TX70DTH
+/*
+ * TX70DTH
+ */
+bool receiveProtocolTX70DTH(unsigned int changeCount) {
+#define TX_SYNC   4000
+#define TX_ONE    2030
+#define TX_ZERO   1020
+#define TX_GLITCH  250
+#define TX_MESSAGELENGTH 36
+
+  if (changeCount < TX_MESSAGELENGTH * 2) {
+    return false;
+  }
+  if ((timings2500[0] < TX_SYNC - TX_GLITCH) || (timings2500[0] > TX_SYNC + TX_GLITCH)) {
+    return false;
+  }
+
+#ifdef DEBUG
+  bool bitmessage[TX_MESSAGELENGTH];
+  if (GetBitStream(timings2500, bitmessage, TX_MESSAGELENGTH * 2, TX_ZERO - TX_GLITCH, TX_ZERO + TX_GLITCH, TX_ONE - TX_GLITCH, TX_ONE + TX_GLITCH) == false) {
+      return false;
+  }
+#endif
+  String rawcode;
+  rawcode = RawMessage(timings2500, TX_MESSAGELENGTH, TX_ZERO - TX_GLITCH, TX_ZERO + TX_GLITCH, TX_ONE - TX_GLITCH, TX_ONE + TX_GLITCH);
+  if (rawcode == "") {
+      return false;
+  }
+
+  message = "W05";
+  message += rawcode;
+  available = true;
+  return true;
+}
+#endif
+
+#ifdef COMP_AURIOL
+/*
+ * AURIOL (Lidl Version: 09/2013)
+ */
+bool receiveProtocolAURIOL(unsigned int changeCount) {
+#define AURIOL_SYNC 9200
+#define AURIOL_ONE 3900
+#define AURIOL_ZERO 1950
+#define AURIOL_GLITCH 150
+#define AURIOL_MESSAGELENGTH 32
+
+  if (changeCount != (AURIOL_MESSAGELENGTH * 2) + 1) {
+    return false;
+  }
+
+  if ((timings[0] < AURIOL_SYNC - AURIOL_GLITCH) || (timings[0] > AURIOL_SYNC + AURIOL_GLITCH)) {
+    return false;
+  }
+
+#ifdef DEBUG
+  bool bitmessage[AURIOL_MESSAGELENGTH];
+  if (GetBitStream(timings, bitmessage, AURIOL_MESSAGELENGTH * 2, AURIOL_ZERO - AURIOL_GLITCH, AURIOL_ZERO + AURIOL_GLITCH, AURIOL_ONE - AURIOL_GLITCH, AURIOL_ONE + AURIOL_GLITCH) == false) {
+    Serial.println("Err: BitStream");
+    return false;
+  }
+#endif
+
+  String rawcode;
+  rawcode = RawMessage(timings, AURIOL_MESSAGELENGTH, AURIOL_ZERO - AURIOL_GLITCH, AURIOL_ZERO + AURIOL_GLITCH, AURIOL_ONE - AURIOL_GLITCH, AURIOL_ONE + AURIOL_GLITCH);
+
+  if (rawcode == "") {
+    return false;
+  }
+
+  // check Data integrity
+  message = "W06";
+  message += rawcode;
+  message += "_"; // Fill up to 12 signs
+  available = true;
+  return true;
+
+}
+#endif
+
+/*-----------------------------------------------------------------------------------------------
+/* Devices with sending / receiving functionality
+-----------------------------------------------------------------------------------------------*/
+
+#ifdef COMP_PT2262
+/*
+ * PT2262 Stuff
+ */
+#define RECEIVETOLERANCE       60
+
+bool receiveProtocolPT2262(unsigned int changeCount) {
+
+  message = "IR";
+  if (changeCount != 49) {
+    return false;
+  }
+  unsigned long code = 0;
+  unsigned long delay = timings[0] / 31;
+  unsigned long delayTolerance = delay * RECEIVETOLERANCE * 0.01; 
+
+  for (int i = 1; i < changeCount; i=i+2) {
+    if (timings[i] > delay-delayTolerance && timings[i] < delay+delayTolerance && timings[i+1] > delay*3-delayTolerance && timings[i+1] < delay*3+delayTolerance) {
+      code = code << 1;
+    }
+    else if (timings[i] > delay*3-delayTolerance && timings[i] < delay*3+delayTolerance && timings[i+1] > delay-delayTolerance && timings[i+1] < delay+delayTolerance)  { 
+      code += 1;
+      code = code << 1;
+    }
+    else {
+      code = 0;
+      return false;
+    }
+  }
+  code = code >> 1;
+
+#ifdef DEBUG
+  Serial.print(changeCount);
+  Serial.print(" ");
+  Serial.println(code,BIN);
+#endif
+  message += code;
+  available = true;
+  return true;
+}
+
+void sendPT2262(char* triStateMessage) {
+  unsigned int BaseDur = 350; // Um ggf. die Basiszeit einstellen zu können
+  for (int i = 0; i < ITrepetition; i++) {
+    unsigned int pos = 0;
+    PT2262_transmit(1,31,BaseDur);
+    while (triStateMessage[pos] != '\0') {
+      switch(triStateMessage[pos]) {
+      case '0':
+        PT2262_transmit(1,3,BaseDur);
+        PT2262_transmit(1,3,BaseDur);
+        break;
+      case 'F':
+        PT2262_transmit(1,3,BaseDur);
+        PT2262_transmit(3,1,BaseDur);
+        break;
+      case '1':
+        PT2262_transmit(3,1,BaseDur);
+        PT2262_transmit(3,1,BaseDur);
+        break;
+      }
+      pos++;
+    }
+  }
+}
+
+void PT2262_transmit(int nHighPulses, int nLowPulses, unsigned int BaseDur) {
+  disableReceive();
+  digitalWrite(PIN_SEND, HIGH);
+  delayMicroseconds(BaseDur * nHighPulses);
+  digitalWrite(PIN_SEND, LOW);
+  delayMicroseconds(BaseDur * nLowPulses);
+  enableReceive();
+}
+#endif
+
 #ifdef COMP_FA20RF
 /*
  * FA20RF Receiver
@@ -533,7 +1565,7 @@ void FA20RF(unsigned int duration) {
 #define L_STARTBIT_TIME         8020
 #define H_STARTBIT_TIME         8120
 #define L_STOPBIT_TIME          10000
-#define H_STOPBIT_TIME          14500
+#define H_STOPBIT_TIME          20000 // Stop bit is something geater 10.000 us, may be not graeter then 20.000.
 
   static unsigned int changeCount;
 
@@ -565,26 +1597,14 @@ void receiveProtocolFA20RF(unsigned int changeCount) {
 #define FA20RF_MESSAGELENGTH 24
 
   if (changeCount < (FA20RF_MESSAGELENGTH * 2)) {
-#ifdef DEBUG
-    Serial.print("changeCount: ");
-    Serial.println(changeCount);
-#endif
     return;
   }
   
   if ((timingsFA20[0] < FA20RF_SYNC - FA20RF_GLITCH) || (timingsFA20[0] > FA20RF_SYNC + FA20RF_GLITCH)) {
-#ifdef DEBUG
-    Serial.print("timingsFA20[0]: ");
-    Serial.println(timingsFA20[0]);
-#endif
     return;
   }
 
   if ((timingsFA20[1] < FA20RF_SYNC2 - FA20RF_GLITCH) || (timingsFA20[1] > FA20RF_SYNC2 + FA20RF_GLITCH)) {
-#ifdef DEBUG
-    Serial.print("timingsFA20[1]: ");
-    Serial.println(timingsFA20[1]);
-#endif
     return;
   }
 
@@ -629,7 +1649,7 @@ void receiveProtocolFA20RF(unsigned int changeCount) {
   return;
 }
 
-void sendFA20RF(char* triStateMessage) {
+void sendFA20RF(char* StateMessage) {
   unsigned int pos = 0;
 
   for (int i = 0; i < FArepetition; i++) {
@@ -641,8 +1661,8 @@ void sendFA20RF(char* triStateMessage) {
     digitalWrite(PIN_SEND, LOW);
     delayMicroseconds(920);
     enableReceive();
-    while (triStateMessage[pos] != '\0') {
-      switch(triStateMessage[pos]) {
+    while (StateMessage[pos] != '\0') {
+      switch(StateMessage[pos]) {
       case '0':
         disableReceive();
         digitalWrite(PIN_SEND, HIGH);
@@ -672,772 +1692,255 @@ void sendFA20RF(char* triStateMessage) {
     digitalWrite(PIN_SEND, LOW);
     enableReceive();
   }
-  Serial.print("Ende Senden: ");
-  Serial.println(pos);
 }
 #endif
 
+#ifdef COMP_TCM
 /*
- * decoders with an startbit > 5000
+ * TCM234759 Stuff
+ * Message: 100100111100 11100001
+ *          Address      ?
  */
-void Startbit_5000(unsigned int duration) {
-#define STARTBIT_TIME   5000
-#define STARTBIT_OFFSET 200
+bool receiveProtocolTCM(unsigned int changeCount) {
+#define TCM_SYNC          47670
+#define TCM_ONE           750
+#define TCM_ZERO          1400
+#define TCM_GLITCH        100
 
-  static unsigned int changeCount;
-  static unsigned int repeatCount;
-  bool rc = false;
+#define TCM_MESSAGELENGTH 20
 
-  if (duration > STARTBIT_TIME && duration > timings5000[0] - STARTBIT_OFFSET && duration < timings5000[0] + STARTBIT_OFFSET) {
-    repeatCount++;
-    changeCount--;
-    if (repeatCount == 2) {
-#ifdef DEBUG
-      Serial.print("changeCount: ");
-      Serial.println(changeCount);
-      Serial.print("Timings: ");
-      Serial.println(timings5000[0]);
-#endif
-#ifdef COMP_KW9010
-      if (rc == false) {
-        rc = receiveProtocolKW9010(changeCount);
-      }
-#endif
-#ifdef COMP_NC_WS
-      if (rc == false) {
-        rc = receiveProtocolNC_WS(changeCount);
-      }
-#endif
-#ifdef COMP_EUROCHRON
-      if (rc == false) {
-        rc = receiveProtocolEuroChron(changeCount);
-      }
-#endif
-#ifdef COMP_PT2262
-      if (rc == false) {
-        rc = receiveProtocolPT2262(changeCount);
-      }
-#endif
-#ifdef COMP_LIFETEC
-      if (rc == false) {
-        rc = receiveProtocolLIFETEC(changeCount);
-      }
-#endif
-      if (rc == false) {
-        // rc = next decoder;
-      }
-      repeatCount = 0;
-    }
-    changeCount = 0;
-  } 
-  else if (duration > STARTBIT_TIME) {
-    changeCount = 0;
+  if (changeCount < TCM_MESSAGELENGTH * 2) {
+    return false;
   }
-
-  if (changeCount >= MAX_CHANGES) {
-    changeCount = 0;
-    repeatCount = 0;
-  }
-  timings5000[changeCount++] = duration;
-}
-
-/*
- * decoders with an startbit > 2500
- */
-void Startbit_2500(unsigned int duration) {
-#define STARTBIT_TIME2         2500
-#define STARTBIT_OFFSET2       100
-
-  static unsigned int changeCount;
-  static unsigned int repeatCount;
-  bool rc = false;
-
-  if (duration > STARTBIT_TIME2 && duration > timings2500[0] - STARTBIT_OFFSET2 && duration < timings2500[0] + STARTBIT_OFFSET2) {
-    repeatCount++;
-    changeCount--;
-    if (repeatCount == 2) {
-#ifdef COMP_TX70DTH
-      if (rc == false) {
-        rc = receiveProtocolTX70DTH(changeCount);
-      }
-#endif
-      if (rc == false) {
-        // rc = next decoder;
-      }
-      repeatCount = 0;
-    }
-    changeCount = 0;
-  } 
-  else if (duration > STARTBIT_TIME2) {
-    changeCount = 0;
-  }
-
-  if (changeCount >= MAX_CHANGES) {
-    changeCount = 0;
-    repeatCount = 0;
-  }
-  timings2500[changeCount++] = duration;
-}
-
-/*
- * Serial Command Handling
- */
-void serialEvent()
-{
-  while (Serial.available())
-  {
-    char inChar = (char)Serial.read();
-    switch(inChar)
-    {
-    case '\n':
-    case '\r':
-    case '\0':
-    case '#':
-      HandleCommand(cmdstring);
-      break;
-    default:
-      cmdstring = cmdstring + inChar;
-    }
-  }
-}
-
-void HandleCommand(String cmd)
-{
-  // Version Information
-  if (cmd.equals("V"))
-  {
-//    Serial.print(PROGVERS);
-//    Serial.println(F(" FHEMduino - compiled at " __DATE__ " " __TIME__));
-//    Serial.println(F("V 1.0b1 FHEMduino - compiled at " __DATE__ " " __TIME__));
-    Serial.println(F("V " PROGVERS " FHEMduino - compiled at " __DATE__ " " __TIME__));
-  }
-  // Print free Memory
-  else if (cmd.equals("R")) {
-    Serial.print(F("R"));
-    Serial.println(freeRam());
-  }
-#ifdef COMP_FA20RF
-  // Set FA20RF Repetition
-  else if (cmd.startsWith("sdr"))
-  {
-    char msg[3];
-    cmd.substring(3).toCharArray(msg,3);
-    FArepetition = atoi(msg);
-    Serial.println(cmd);
-  }  
-  // Switch FA20RF Devices
-  else if (cmd.startsWith("sd"))
-  {
-    digitalWrite(PIN_LED,HIGH);
-    char msg[30];
-    cmd.substring(2).toCharArray(msg,30);
-    sendFA20RF(msg);
-    digitalWrite(PIN_LED,LOW);
-    Serial.println(msg);
-  }
-#endif
-#ifdef COMP_PT2262
-  // Set Intertechno Repetition
-  else if (cmd.startsWith("isr"))
-  {
-    char msg[3];
-    cmd.substring(3).toCharArray(msg,3);
-    ITrepetition = atoi(msg);
-    Serial.println(cmd);
-  }  
-  // Switch Intertechno Devices
-  else if (cmd.startsWith("is"))
-  {
-    digitalWrite(PIN_LED,HIGH);
-    char msg[13];
-    cmd.substring(2).toCharArray(msg,13);
-    sendPT2262(msg);
-    digitalWrite(PIN_LED,LOW);
-    Serial.println(cmd);
-  }
-#endif
-  else if (cmd.equals("XQ")) {
-    disableReceive();
-    Serial.flush();
-    Serial.end();
-  }
-  // Print Available Commands
-  else if (cmd.equals("?"))
-  {
-    Serial.println(F("? Use one of V is isr sd sdr R q"));
-  }
-  cmdstring = "";
-}
-
-// Get free RAM of UC
-int freeRam () {
-  extern int __heap_start, *__brkval; 
-  int v; 
-  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
-}
-
-/*
- * Message Handling
- */
-bool messageAvailable() {
-  return (available && (message.length() > 0));
-}
-
-void resetAvailable() {
-  available = false;
-  message = "";
-}
-
-#ifdef COMP_KW9010
-/*
- * KW9010
- */
-bool receiveProtocolKW9010(unsigned int changeCount) {
-#define KW9010_SYNC 9000
-#define KW9010_ONE 4000
-#define KW9010_ZERO 2000
-#define KW9010_GLITCH 200
-#define KW9010_MESSAGELENGTH 36
-
-  bool bitmessage[KW9010_MESSAGELENGTH + 1];
-  int bitcount = 0;
-  int i = 0;
-
-  if (changeCount < KW9010_MESSAGELENGTH * 2) return false;
-
-  if ((timings5000[0] < KW9010_SYNC - KW9010_GLITCH) || (timings5000[0] > KW9010_SYNC + KW9010_GLITCH)) {
+  if ((timings[0] < TCM_SYNC - TCM_GLITCH) || (timings[0] > TCM_SYNC + TCM_GLITCH)) {
     return false;
   }
 
-  //Serial.println(changeCount);
-  for (int i = 2; i < changeCount; i=i+2) {
-    if ((timings5000[i] > KW9010_ZERO - KW9010_GLITCH) && (timings5000[i] < KW9010_ZERO + KW9010_GLITCH)) {
-      // its a zero
-      bitmessage[bitcount] = false;
-      bitcount++;
-    }
-    else if ((timings5000[i] > KW9010_ONE - KW9010_GLITCH) && (timings5000[i] < KW9010_ONE + KW9010_GLITCH)) {
-      // its a one
-      bitmessage[bitcount] = true;
-      bitcount++;
-    }
-    else {
-      return false;
-    }
-  }
-
 #ifdef DEBUG
-    Serial.print("Bit-Stream: ");
-    for (i = 0; i < KW9010_MESSAGELENGTH; i++) {
-      Serial.print(bitmessage[i]);
-    }
-    Serial.println();
+  bool bitmessage[TCM_MESSAGELENGTH];
+  if (GetBitStream(timings, bitmessage, TCM_MESSAGELENGTH * 2, TCM_ZERO - TCM_GLITCH, TCM_ZERO + TCM_GLITCH, TCM_ONE - TCM_GLITCH, TCM_ONE + TCM_GLITCH) == false) {
+      return false;
+  }
 #endif
 
-  // Sensor ID & Channel
-  byte id = bitmessage[7] | bitmessage[6] << 1 | bitmessage[5] << 2 | bitmessage[4] << 3 | bitmessage[3] << 4 | bitmessage[2] << 5 | bitmessage[1] << 6 | bitmessage[0] << 7;
-
-  // (Propably) Battery State
-  bool battery = bitmessage[8];
-
-  // Trend
-  byte trend = bitmessage[9] << 1 | bitmessage[10];
-
-  // Trigger
-  bool forcedSend = bitmessage[11];
-
-  // Temperature & Humidity
-  int temperature = ((bitmessage[23] << 11 | bitmessage[22] << 10 | bitmessage[21] << 9 | bitmessage[20] << 8 | bitmessage[19] << 7 | bitmessage[18] << 6 | bitmessage[17] << 5 | bitmessage[16] << 4 | bitmessage[15] << 3 | bitmessage[14] << 2 | bitmessage[13] << 1 | bitmessage[12]) << 4 ) >> 4;
-  byte humidity = (bitmessage[31] << 7 | bitmessage[30] << 6 | bitmessage[29] << 5 | bitmessage[28] << 4 | bitmessage[27] << 3 | bitmessage[26] << 2 | bitmessage[25] << 1 | bitmessage[24]) - 156;
-
-  // check Data integrity
-  byte checksum = (bitmessage[35] << 3 | bitmessage[34] << 2 | bitmessage[33] << 1 | bitmessage[32]);
-  byte calculatedChecksum = 0;
-
-  for ( i = 0 ; i <= 7 ; i++) {
-    calculatedChecksum += (byte)(bitmessage[i*4 + 3] <<3 | bitmessage[i*4 + 2] << 2 | bitmessage[i*4 + 1] << 1 | bitmessage[i*4]);
+  String rawcode;
+  rawcode = RawMessage(timings, TCM_MESSAGELENGTH, TCM_ZERO - TCM_GLITCH, TCM_ZERO + TCM_GLITCH, TCM_ONE - TCM_GLITCH, TCM_ONE + TCM_GLITCH);
+  if (rawcode == "") {
+      return false;
   }
-  calculatedChecksum &= 0xF;
 
-  if (calculatedChecksum == checksum) {
-    if (temperature > -500 && temperature < 700) {
-      if (humidity > 0 && humidity < 100) {
-        char tmp[11];
-        sprintf(tmp,"K%02X%01d%01d%01d%+04d%02d", id, battery, trend, forcedSend, temperature, humidity);
-        message = tmp;
-        available = true;
-        return true;
-      }
-    }
-  }
-  return false;
+  message = "M";
+  message += rawcode;
+  available = true;
+  return true;
+
 }
 #endif
 
-#ifdef COMP_PT2262
 /*
- * PT2262 Stuff
+ * Heidemann HX Pocket (70283)
+ * May work also with other Heidemann HX series door bells
  */
-#define RECEIVETOLERANCE       60
+#ifdef COMP_HX
+bool receiveProtocolHX(unsigned int changeCount) {
+#define HX_SYNC   5030
+#define HX_ONE    710
+#define HX_ZERO   350
+#define HX_GLITCH  40
 
-bool receiveProtocolPT2262(unsigned int changeCount) {
+#define HX_MESSAGELENGTH 12
 
-  message = "IR";
-  if (changeCount != 49) {
+  if (changeCount != 25) {
     return false;
   }
-  unsigned long code = 0;
-  unsigned long delay = timings5000[0] / 31;
-  unsigned long delayTolerance = delay * RECEIVETOLERANCE * 0.01; 
-
-  // 1 3 5 7 9 11 13 15 17 19 21 23 25 27 29 31 33 35 37 39 41 43 45 47
-  for (int i = 1; i < changeCount; i=i+2) {
-    if (timings5000[i] > delay-delayTolerance && timings5000[i] < delay+delayTolerance && timings5000[i+1] > delay*3-delayTolerance && timings5000[i+1] < delay*3+delayTolerance) {
-      code = code << 1;
-    }
-    else if (timings5000[i] > delay*3-delayTolerance && timings5000[i] < delay*3+delayTolerance && timings5000[i+1] > delay-delayTolerance && timings5000[i+1] < delay+delayTolerance)  { 
-      code += 1;
-      code = code << 1;
-    }
-    else {
-      code = 0;
-      i = changeCount;
-      return false;
-    }
+  if ((timings[0] < HX_SYNC - HX_GLITCH) || (timings[0] > HX_SYNC + HX_GLITCH)) {
+    return false;
   }
-  code = code >> 1;
-  message += code;
+
+  bool bitmessage[HX_MESSAGELENGTH];
+  
+#ifdef DEBUG
+  if (GetBitStream(timings, bitmessage, HX_MESSAGELENGTH * 2, HX_ZERO - HX_GLITCH, HX_ZERO + HX_GLITCH, HX_ONE - HX_GLITCH, HX_ONE + HX_GLITCH) == false) {
+      return false;
+  }
+#endif
+
+  String rawcode;
+  rawcode = RawMessage(timings, HX_MESSAGELENGTH, HX_ZERO - HX_GLITCH, HX_ZERO + HX_GLITCH, HX_ONE - HX_GLITCH, HX_ONE + HX_GLITCH);
+  if (rawcode == "") {
+      return false;
+  }
+
+  message = "H";
+  message += rawcode;
   available = true;
   return true;
 }
+#endif
 
-void sendPT2262(char* triStateMessage) {
-  unsigned int BaseDur = 350; // Um ggf. die Basiszeit einstellen zu können
-  for (int i = 0; i < ITrepetition; i++) {
-    unsigned int pos = 0;
-    PT2262_sendSync(BaseDur);    
-    while (triStateMessage[pos] != '\0') {
-      switch(triStateMessage[pos]) {
+void sendStd(char* StateMessage, byte Repetition, int Intro, int Nlow, int Nhigh, int Hlow, int Hhigh, unsigned long Footer) {
+  unsigned int pos = 0;
+  unsigned int milli = 0;
+  unsigned int micro = 0;
+  
+  if (Footer > 16000) {
+    milli = Footer / 1000;
+    micro = Footer - (milli * 1000);
+  } else {
+    micro = Footer;
+  }
+  
+  for (int i = 0; i < Repetition; i++) {
+    pos = 0;
+    disableReceive();
+    digitalWrite(PIN_SEND, HIGH);
+    delayMicroseconds(Intro); // 270
+    enableReceive();
+    while (StateMessage[pos] != '\0') {
+      switch(StateMessage[pos]) {
       case '0':
-        PT2262_sendT0(BaseDur);
-        break;
-      case 'F':
-        PT2262_sendTF(BaseDur);
+        disableReceive();
+        digitalWrite(PIN_SEND, LOW);
+        delayMicroseconds(Nlow); //300
+        digitalWrite(PIN_SEND, HIGH);
+        delayMicroseconds(Nhigh); // 600
+        enableReceive();
         break;
       case '1':
-        PT2262_sendT1(BaseDur);
+        disableReceive();
+        digitalWrite(PIN_SEND, LOW);
+        delayMicroseconds(Hlow); // 720
+        digitalWrite(PIN_SEND, HIGH);
+        delayMicroseconds(Hhigh); // 260
+        enableReceive();
         break;
       }
       pos++;
     }
+    disableReceive();
+    digitalWrite(PIN_SEND, LOW);
+    delayMicroseconds(micro);
+    delay(milli);
+    enableReceive();
   }
 }
 
-void PT2262_sendT0(unsigned int BaseDur) {
-  PT2262_transmit(1,3,BaseDur);
-  PT2262_transmit(1,3,BaseDur);
-}
+#ifdef DEBUG
+bool GetBitStream(unsigned int timings[] ,bool bitmessage[], byte BitCount, unsigned int L_Zero, unsigned int R_Zero, unsigned int L_One, unsigned int R_One) {
 
-void PT2262_sendT1(unsigned int BaseDur) {
-  PT2262_transmit(3,1,BaseDur);
-  PT2262_transmit(3,1,BaseDur);
-}
-
-void PT2262_sendTF(unsigned int BaseDur) {
-  PT2262_transmit(1,3,BaseDur);
-  PT2262_transmit(3,1,BaseDur);
-}
-
-void PT2262_sendSync(unsigned int BaseDur) {
-  PT2262_transmit(1,31,BaseDur);
-}
-
-void PT2262_transmit(int nHighPulses, int nLowPulses, unsigned int BaseDur) {
-  disableReceive();
-  digitalWrite(PIN_SEND, HIGH);
-  delayMicroseconds(BaseDur * nHighPulses);
-  digitalWrite(PIN_SEND, LOW);
-  delayMicroseconds(BaseDur * nLowPulses);
-  enableReceive();
-}
-#endif
-
-#ifdef COMP_NC_WS
-/*
- * NC_WS / PEARL NC7159, LogiLink W0002
- */
-bool receiveProtocolNC_WS(unsigned int changeCount) {
-#define NC_WS_SYNC   9250
-#define NC_WS_ONE    3900
-#define NC_WS_ZERO   1950
-#define NC_WS_GLITCH 100
-#define NC_WS_MESSAGELENGTH 36
-
-  if (changeCount < NC_WS_MESSAGELENGTH * 2) {
-    return false;
-  }
+  byte i=0;
+  byte j=0;
   
-  if ((timings5000[0] < NC_WS_SYNC - NC_WS_GLITCH) || (timings5000[0] > NC_WS_SYNC + NC_WS_GLITCH)) {
-    return false;
-  }
-
-  int i = 0;
-  bool bitmessage[NC_WS_MESSAGELENGTH];
-
-  for (i = 0; i < (NC_WS_MESSAGELENGTH * 2); i = i + 2)
+  for (i = 0; i < BitCount; i = i + 2)
   {
-    if ((timings5000[i + 2] > NC_WS_ZERO - NC_WS_GLITCH) && (timings5000[i + 2] < NC_WS_ZERO + NC_WS_GLITCH))    {
+    j = i + 2;
+    if ((timings[j] > L_Zero) && (timings[j] < R_Zero))    {
       bitmessage[i >> 1] = false;
     }
-    else if ((timings5000[i + 2] > NC_WS_ONE - NC_WS_GLITCH) && (timings5000[i + 2] < NC_WS_ONE + NC_WS_GLITCH)) {
+    else if ((timings[j] > L_One) && (timings[j] < R_One)) {
       bitmessage[i >> 1] = true;
     }
     else {
       return false;
     }
   }
-
-#ifdef DEBUG
-/*  Serial.print("NC_WS: ");
-  for (i = 0; i < NC_WS_MESSAGELENGTH; i++) {
-    if(i==4) Serial.print(" ");
-    if(i==12) Serial.print(" ");
-    if(i==13) Serial.print(" ");
-    if(i==14) Serial.print(" ");
-    if(i==16) Serial.print(" ");
-    if(i==17) Serial.print(" ");
-    if(i==28) Serial.print(" ");
-    if(i==29) Serial.print(" ");
-    Serial.print(bitmessage[i]);
-  }
-  Serial.println(); */
-
-  //                 /--------------------------------- Sensdortype      
-  //                /    / ---------------------------- ID, changes after every battery change      
-  //               /    /        /--------------------- Battery state 0 == Ok
-  //              /    /        /  / ------------------ forced send      
-  //             /    /        /  /  / ---------------- Channel (0..2)      
-  //            /    /        /  /  /  / -------------- neg Temp: if 1 then temp = temp - 2048
-  //           /    /        /  /  /  /   / ----------- Temp
-  //          /    /        /  /  /  /   /          /-- unknown
-  //         /    /        /  /  /  /   /          /  / Humidity
-  //         0101 00101001 0  0  00 0  01000110000 1  1011101
-  // Bit     0    4        12 13 14 16 17          28 29    36
-#endif
-
-  // Sensor type (Type 5)
-  byte unsigned id = 0;
-  for (i = 0; i < 4; i++) if (bitmessage[i]) id +=  1 << (3 - i);
-  if (id != 5) {
-    return false;
-  }
-
-  // Sensor ID, will change after ever battery replacement
-  id = 0; 
-  for (i = 4; i < 12; i++)  if (bitmessage[i]) id +=  1 << (11 - i);
-
-  // Bit 12 : Battery State
-  bool battery = !bitmessage[12];
-
-  // Bit 13 : Trigger
-  bool forcedSend = bitmessage[13];
-
-  // Bit 14 + 15 = Sensor channel, depends on channel switch: 0 - 2
-  byte unsigned channel = bitmessage[15] | bitmessage[14]  << 1;
-
-  // Bit 16 : Temperatur sign (+/-)
-
-  // Temperatur
-  int temperature = 0;
-  for (i = 17; i < 28; i++) if (bitmessage[i]) temperature +=  1 << (27 - i);
-  if (bitmessage[16]) temperature -= 2048; // negative Temp
-
-  // Don't know ?
-  byte trend = 0;
-  for (i = 28; i < 29; i++)  if (bitmessage[i]) trend +=  1 << (29 - i);
-
-  // die restlichen 6 Bits fuer Luftfeuchte
-  int humidity = 0;
-  for (i = 29; i < 36; i++) if (bitmessage[i]) humidity +=  1 << (35 - i);
-
-  char tmp[13];
-  sprintf(tmp, "L%01d%02x%01d%01d%01d%+04d%02d", channel, id, battery, trend, forcedSend, temperature, humidity);
-  message = tmp;
-  available = true;
-  return true;
-}
-#endif
-
-#ifdef COMP_EUROCHRON
-/*
- * EUROCHRON
- */
-bool receiveProtocolEuroChron(unsigned int changeCount) {
-#define EuroChron_SYNC   8050
-#define EuroChron_ONE    2020
-#define EuroChron_ZERO   1010
-#define EuroChron_GLITCH  100
-#define EuroChron_MESSAGELENGTH 36
-
-  if (changeCount < EuroChron_MESSAGELENGTH * 2) {
-    return false;
-  }
-
-  int i = 0;
-  bool bitmessage[EuroChron_MESSAGELENGTH];
-
-  if ((timings5000[0] < EuroChron_SYNC - EuroChron_GLITCH) && (timings5000[0] > EuroChron_SYNC + EuroChron_GLITCH)) {
-    return false;
-  }
-  
-  for (i = 0; i < (EuroChron_MESSAGELENGTH * 2); i = i + 2)
-  {
-    if ((timings5000[i + 2] > EuroChron_ZERO - EuroChron_GLITCH) && (timings5000[i + 2] < EuroChron_ZERO + EuroChron_GLITCH))    {
-      bitmessage[i >> 1] = false;
-    }
-    else if ((timings5000[i + 2] > EuroChron_ONE - EuroChron_GLITCH) && (timings5000[i + 2] < EuroChron_ONE + EuroChron_GLITCH)) {
-      bitmessage[i >> 1] = true;
-    }
-    else {
-      return false;
-    }
-  }
-
-#ifdef DEBUG
-  //                /--------------------------- Channel, changes after every battery change      
-  //               /        / ------------------ Battery state 0 == Ok      
-  //              /        / /------------------ unknown      
-  //             /        / /  / --------------- forced send      
-  //            /        / /  /  / ------------- unknown      
-  //           /        / /  /  /     / -------- Humidity      
-  //          /        / /  /  /     /       / - neg Temp: if 1 then temp = temp - 2048
-  //         /        / /  /  /     /       /  / Temp
-  //         01100010 1 00 1  00000 0100011 0  00011011101
-  // Bit     0        8 9  11 12    17      24 25        36
 
   Serial.print("Bit-Stream: ");
-  for (i = 0; i < EuroChron_MESSAGELENGTH; i++) {
-    if(i==8) Serial.print(" ");  
-    if(i==9) Serial.print(" ");  
-    if(i==11) Serial.print(" "); 
-    if(i==12) Serial.print(" "); 
-    if(i==17) Serial.print(" "); 
-    if(i==24) Serial.print(" "); 
-    if(i==25) Serial.print(" "); 
+  for (i = 0; i < (BitCount / 2); i++) {
     Serial.print(bitmessage[i]);
   }
   Serial.println();
-#endif
 
-  // Sensor ID & Channel, will be changed after every battery change
-  byte unsigned id = 0;
-  for (i = 0; i < 8; i++)  if (bitmessage[i]) id +=  1 << (7 - i);
-
-  // Battery State
-  bool battery = bitmessage[8];
-  
-  // first unknown
-  byte firstunknown = 0;
-  for (i = 9; i < 11; i++)  if (bitmessage[i]) firstunknown +=  1 << (10 - i);
-
-  // Trigger
-  bool forcedSend = bitmessage[11];
-  
-  // second unknown
-  byte secunknown = 0;
-  for (i = 12; i < 17; i++)  if (bitmessage[i]) secunknown +=  1 << (16 - i);
-
-  // Luftfeuchte
-  int humidity = 0;
-  for (i = 17; i < 24; i++) if (bitmessage[i]) humidity +=  1 << (23 - i);
-
-  // Temperatur
-  int temperature = 0;
-  for (i = 25; i < 36; i++) if (bitmessage[i]) temperature +=  1 << (35 - i);
-  if (bitmessage[24]) temperature -= 2048; // negative Temp
-
-  char tmp[14];
-  sprintf(tmp, "C%02x%01d%01d%01d%02d%+04d%02d", id, battery, firstunknown, forcedSend, secunknown, temperature, humidity);
-  message = tmp;
-  available = true;
   return true;
 }
 #endif
 
-#ifdef COMP_LIFETEC
-/*
- * LIFETEC
- */
-bool receiveProtocolLIFETEC(unsigned int changeCount) {
-#define LIFETEC_SYNC   8640
-#define LIFETEC_ONE    4084
-#define LIFETEC_ZERO   2016
-#define LIFETEC_GLITCH  460
-#define LIFETEC_MESSAGELENGTH 24
+String RawMessage(unsigned int timings[], byte BitCount, unsigned int L_Zero, unsigned int R_Zero, unsigned int L_One, unsigned int R_One) {
 
-  bool bitmessage[24];
-  int i = 0;
-
-  if (changeCount < LIFETEC_MESSAGELENGTH * 2) {
-    return false;
-  }
-  if ((timings5000[0] < LIFETEC_SYNC - LIFETEC_GLITCH) || (timings5000[0] > LIFETEC_SYNC + LIFETEC_GLITCH)) {
-    return false;
-  }
-
-  for (i = 0; i < (LIFETEC_MESSAGELENGTH * 2); i = i + 2)
+  byte i=0;
+  byte j=0;
+  byte code = 0;
+  String hexText;
+  
+  for (i = 0; i < BitCount * 2; i = i + 2)
   {
-    if ((timings5000[i + 2] > LIFETEC_ZERO - LIFETEC_GLITCH) && (timings5000[i + 2] < LIFETEC_ZERO + LIFETEC_GLITCH))    {
-      bitmessage[i >> 1] = false;
+    j = i + 2;
+    if ((timings[j] > L_Zero) && (timings[j] < R_Zero))    {
+      code = code << 1;
     }
-    else if ((timings5000[i + 2] > LIFETEC_ONE - LIFETEC_GLITCH) && (timings5000[i + 2] < LIFETEC_ONE + LIFETEC_GLITCH)) {
-      bitmessage[i >> 1] = true;
+    else if ((timings[j] > L_One) && (timings[j] < R_One)) {
+      code <<= 1;
+      code |= 1;
     }
     else {
-      return false;
+      return "";
+    }
+    // Byte then chnage to hex
+    if ((j % 8) == 0) {
+      hexText += String(code,HEX);
+      code = 0;
     }
   }
   
-  //                /------------------------------------- Channel, changes after every battery change      
-  //               /        / ---------------------------- neg Temp: normal = 000 if 111 then temp = temp - 512      
-  //              /        / /---------------------------- Temp      
-  //             /        / /       / -------------------- Battery state 1 == Ok      
-  //            /        / /       /  /------------------- forced send      
-  //           /        / /       /  /  /----------------- filler ?
-  //          /        / /       /  /  /  /--------------- TEMP Nachkommastelle
-  //         /        / /       /  /  /  /  
-  //         11010010 0 0011100 1  0  00 1001
-  // Bit     0        8 9       16 17 18 20  24
+  // maybe some bits left
+  if ((j % 8) != 0) {
+    hexText += String(code,HEX);
+  }
 
-#ifdef DEBUG
-    Serial.print("Bit-Stream: ");
-    for (i = 0; i < LIFETEC_MESSAGELENGTH; i++) {
-      Serial.print(bitmessage[i]);
-    }
-    Serial.println();
-  
-#endif
-
-  // Sensor ID & Channel, will be changed after every battery change
-  byte unsigned id = 0;
-  for (i = 0; i < 8; i++)  if (bitmessage[i]) id +=  1 << (7 - i);
-
-  // Battery State
-  bool battery = bitmessage[16];
-  if (battery = 1) {battery = 0;} else if (battery = 0) {battery = 1;}
-
-  // (Propably) Trend
-  byte trend = 0; //nicht unterstüzt
-
-  // Trigger
-  bool forcedSend = bitmessage[17];
-  
-  // Temperatur
-  int temperature = 0;
-  for (i = 9; i < 16; i++) if (bitmessage[i]) temperature +=  1 << (15 - i);
-  temperature = temperature * 10;
-  for (i = 20; i < 24; i++) if (bitmessage[i]) temperature +=  1 << (23 - i);
-  if (bitmessage[8]) temperature = -temperature; // negative Temp
-
-  // Luftfeuchte
-  int humidity = 0; //nicht unterstüzt
-
-  char tmp[12];
-  sprintf(tmp, "K%02x%01d%01d%01d%+04d%02d", id, battery, trend, forcedSend, temperature, humidity);
-  message = tmp;
-  available = true;
-  return true;
+  return hexText;
 }
-#endif
 
-#ifdef COMP_TX70DTH
-/*
- * TX70DTH
- */
-bool receiveProtocolTX70DTH(unsigned int changeCount) {
-#define TX70DTH_SYNC   4000
-#define TX70DTH_ONE    2030
-#define TX70DTH_ZERO   1020
-#define TX70DTH_GLITCH  250
-#define TX70DTH_MESSAGELENGTH 36
-
-  bool bitmessage[TX70DTH_MESSAGELENGTH];
-  byte i;
-  if (changeCount < TX70DTH_MESSAGELENGTH * 2) {
-    return false;
+unsigned long hexToDec(String hexString) {
+  
+  unsigned long decValue = 0;
+  int nextInt;
+  
+  for (int i = 0; i < hexString.length(); i++) {
+    
+    nextInt = int(hexString.charAt(i));
+    if (nextInt >= 48 && nextInt <= 57) nextInt = map(nextInt, 48, 57, 0, 9);
+    if (nextInt >= 65 && nextInt <= 70) nextInt = map(nextInt, 65, 70, 10, 15);
+    if (nextInt >= 97 && nextInt <= 102) nextInt = map(nextInt, 97, 102, 10, 15);
+    nextInt = constrain(nextInt, 0, 15);
+    
+    decValue = (decValue * 16) + nextInt;
   }
-  if ((timings2500[0] < TX70DTH_SYNC - TX70DTH_GLITCH) || (timings2500[0] > TX70DTH_SYNC + TX70DTH_GLITCH)) {
-    return false;
-  }
-  for (i = 0; i < (TX70DTH_MESSAGELENGTH * 2); i = i + 2)
-  {
-    if ((timings2500[i + 2] > TX70DTH_ZERO - TX70DTH_GLITCH) && (timings2500[i + 2] < TX70DTH_ZERO + TX70DTH_GLITCH))    {
-      bitmessage[i >> 1] = false;
-    }
-    else if ((timings2500[i + 2] > TX70DTH_ONE - TX70DTH_GLITCH) && (timings2500[i + 2] < TX70DTH_ONE + TX70DTH_GLITCH)) {
-      bitmessage[i >> 1] = true;
-    }
-    else {
-      return false;
-    }
-  }
-
-#ifdef DEBUG
-  //                /--------------------------------- Channel, changes after every battery change      
-  //               /        / ------------------------ Battery state 1 == Ok      
-  //              /        / /------------------------ Kanal 000 001 010 hier (Kanal 3)      
-  //             /        / /   / -------------------- neg Temp: normal = 000 if 111 then temp = temp - 512      
-  //            /        / /   /   / ----------------- Temp      
-  //           /        / /   /   /         / -------- filler also 1111      
-  //          /        / /   /   /         /     /---- Humidity
-  //         /        / /   /   /         /     /  
-  //         11111101 1 010 000 011111001 1111 00101111
-  // Bit     0        8 9   12  15        24   28     35
-
-  Serial.print("Bit-Stream: ");
-  if(i==8) Serial.print(" ");  
-  if(i==9) Serial.print(" ");  
-  if(i==12) Serial.print(" "); 
-  if(i==15) Serial.print(" "); 
-  if(i==24) Serial.print(" "); 
-  if(i==28) Serial.print(" "); 
-  for (i = 0; i < TX70DTH_MESSAGELENGTH; i++) {
-    Serial.print(bitmessage[i]);
-  }
-  Serial.println();
-#endif
-
-  // Sensor ID & Channel
-  byte unsigned id = bitmessage[3] | bitmessage[2] << 1 | bitmessage[1] << 2 | bitmessage[0] << 3 ;
-  id = 0; // unterdruecke Bit 4+5, jetzt erst einmal nur 6 Bit
-  for (i = 6; i < 12; i++)  if (bitmessage) id +=  1 << (13 - i);
-
-  // Bit 9 : immer 1 oder doch Battery State ?
-  bool battery = bitmessage[8];
-
-  // Bit 11 + 12 = Kanal  0 - 2 , id nun bis auf 8 Bit fuellen
-  id = id | bitmessage[10] << 1 | bitmessage[11] ;
-
-  // Trigger
-  bool forcedSend = 0; // wird nicht unterstützt
-  byte trend = 0; //trend wird nicht unterstützt
-
-  int temperature = 0;
-  for (i = 16; i < 24; i++) if (bitmessage) temperature +=  1 << (23 - i);
-  if (bitmessage[14]) temperature -= 0x200; // negative Temp
-  byte feuchte = 0;
-  for (i = 29; i < 36; i++) if (bitmessage) feuchte +=  1 << (35 - i);
-
-  // die restlichen 4 Bits sind z.Z unbekannt
-  byte rest = 0;
-  for (i = 24; i < 27; i++) if (bitmessage) rest +=  1 << (26 - i);
-
-  char tmp[12];
-  sprintf(tmp, "K%02x%01d%01d%01d%+04d%02d", id, battery, trend, forcedSend, temperature, feuchte);
-  message = tmp;
-  available = true;
-  return true;
+  
+  return decValue;
 }
-#endif
 
+String hex2bin(String hexaDecimal)
+{
+  byte i=0;
+  String bitstream;
 
+  while(hexaDecimal[i]){
+    switch(hexaDecimal[i]){
+      case '0': bitstream += "0000"; break;
+      case '1': bitstream += "0001"; break;
+      case '2': bitstream += "0010"; break;
+      case '3': bitstream += "0011"; break;
+      case '4': bitstream += "0100"; break;
+      case '5': bitstream += "0101"; break;
+      case '6': bitstream += "0110"; break;
+      case '7': bitstream += "0111"; break;
+      case '8': bitstream += "1000"; break;
+      case '9': bitstream += "1001"; break;
+      case 'A': bitstream += "1010"; break;
+      case 'B': bitstream += "1011"; break;
+      case 'C': bitstream += "1100"; break;
+      case 'D': bitstream += "1101"; break;
+      case 'E': bitstream += "1110"; break;
+      case 'F': bitstream += "1111"; break;
+      case 'a': bitstream += "1010"; break;
+      case 'b': bitstream += "1011"; break;
+      case 'c': bitstream += "1100"; break;
+      case 'd': bitstream += "1101"; break;
+      case 'e': bitstream += "1110"; break;
+      case 'f': bitstream += "1111"; break;
+      default:  ;
+    }
+    i++;
+  }
+  return bitstream;
+}
