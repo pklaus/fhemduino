@@ -361,7 +361,7 @@ void COMP_Cresta_HANDLER (unsigned int duration) {
     byte len;
     const byte* data = orscV2.getData(len) + 5;
     char tmp[36]="";
-    int tmp_len = 0;
+    uint8_t tmp_len = 0;
     strcat(tmp, "CRESTA:");
     tmp_len = 7;
 
