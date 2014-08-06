@@ -65,7 +65,7 @@
 #define BAUDRATE               9600
 #endif
 
-//#define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
+#define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
 #define COMP_FA20RF     // Compile sketch with smoke detector Flamingo FA20RF / ELRO RM150RF
 #define COMP_KW9010     // Compile sketch with KW9010 support
@@ -130,21 +130,21 @@ static unsigned int ITrepetition = 3;
  * FA20RF
  */
 #ifdef COMP_FA20RF
-static unsigned int FArepetition = 10;
+static  unsigned int FArepetition = 10;
 #endif
 
 /*
  * TCM234759
  */
 #ifdef COMP_TCM
-static unsigned int TCMrepetition = 19;
+static  unsigned int TCMrepetition = 19;
 #endif
 
 /*
  * Heidemann HX Pocket (70283)
  */
 #ifdef COMP_HX
-static unsigned int HXrepetition = 19;
+static  unsigned int HXrepetition = 19;
 #endif
 
 /*
@@ -575,7 +575,19 @@ void HandleCommand(String cmd)
     digitalWrite(PIN_LED,HIGH);
     char msg[13];
     cmd.substring(2).toCharArray(msg,13);
-    sendPT2262(msg);
+    unsigned int basedur;
+     Serial.println();
+     Serial.println(msg);
+    if (cmd.length() > 14)
+    {
+     basedur=cmd.substring(14).toInt(); // Default Baseduration
+     Serial.println(basedur);
+    }
+    else
+    {
+       basedur=350; // Default Baseduration
+    }
+    sendPT2262(msg,basedur);
     digitalWrite(PIN_LED,LOW);
     Serial.println(cmd);
   }
@@ -1157,8 +1169,8 @@ bool receiveProtocolPT2262(unsigned int changeCount) {
   return true;
 }
 
-void sendPT2262(char* triStateMessage) {
-  unsigned int BaseDur = 350; // Um ggf. die Basiszeit einstellen zu können
+void sendPT2262(char* triStateMessage,unsigned int BaseDur) {
+  //unsigned int BaseDur = 350; // Um ggf. die Basiszeit einstellen zu können
   for (int i = 0; i < ITrepetition; i++) {
     unsigned int pos = 0;
     PT2262_transmit(1,31,BaseDur);
