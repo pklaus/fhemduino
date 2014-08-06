@@ -65,7 +65,7 @@
 #define BAUDRATE               9600
 #endif
 
-#define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
+//#define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
 #define COMP_FA20RF     // Compile sketch with smoke detector Flamingo FA20RF / ELRO RM150RF
 #define COMP_KW9010     // Compile sketch with KW9010 support
@@ -79,7 +79,7 @@
 #define COMP_HX         // Compile sketch with Heidemann HX Pocket (70283) door bell support
 
 #define COMP_OSV2       // Compile sketch with OSV2 Support
-#define COMP_Cresta     // Compile sketch with Cresta Support (currently not implemented, just for future use)
+//#define COMP_Cresta     // Compile sketch with Cresta Support (currently not implemented, just for future use)
 #define USE_OREGON_41   // Use oregon_41 Module which is already included in fhem. If not defined, the 14_fhemduino_oregon module will be used.
 
 // Future enhancement
