@@ -65,7 +65,7 @@
 #define BAUDRATE               9600
 #endif
 
-#define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
+// #define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
 #define COMP_FA20RF     // Compile sketch with smoke detector Flamingo FA20RF / ELRO RM150RF
 #define COMP_KW9010     // Compile sketch with KW9010 support
