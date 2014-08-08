@@ -5,8 +5,18 @@
 /// Generalized decoder framework for 868 MHz and 433 MHz OOK signals.
 // 2010-04-11 <jc@wippler.nl> http://opensource.org/licenses/mit-license.php
 
-#include <Arduino.h>
-#include "Arduino.h"
+//#define DEBUG           // Compile with Debug informations
+
+#ifndef _OREGON_h
+  #define _OREGON_h
+  #if defined(ARDUINO) && ARDUINO >= 100
+    #include "Arduino.h"
+  #else
+    #include "WProgram.h"
+  #endif
+#endif
+
+#include "sketch.h"
 
 class DecodeOOK {
   protected:

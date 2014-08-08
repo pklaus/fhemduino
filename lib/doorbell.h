@@ -2,7 +2,7 @@
 /* door bell support: Tchibo / Heidemann HX Pocket (70283)
 -----------------------------------------------------------------------------------------------*/
 
-//#define DEBUG           // Compile door bell support witdh Debug informations
+//#define DEBUG           // Compile with Debug informations
 
 #ifndef _doorbell_h
   #define _doorbell_h
@@ -13,13 +13,7 @@
   #endif
 #endif
 
-#if defined(__AVR_ATmega32U4__)          //  
-#define PIN_SEND               10        // on some 32U Devices, there is no PIN 11, so we use 10 here. 
-#else 
-#define PIN_SEND               11 
-#endif 
-
-#define PIN_LED                13
+#include "sketch.h"
 
 /*-----------------------------------------------------------------------------------------------
 /* Devices with sending / receiving functionality

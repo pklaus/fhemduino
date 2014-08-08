@@ -1,11 +1,9 @@
 /*-----------------------------------------------------------------------------------------------
-/* Devices with sending / receiving functionality => PT2262
+/* Devices with temperatur / humidity functionality
 -----------------------------------------------------------------------------------------------*/
 
-//#define DEBUG           // Compile with Debug informations
-
-#ifndef _PT2262_h
-  #define _PT2262_h
+#ifndef _TEMP_HUM_h
+  #define _TEMP_HUM_h
   #if defined(ARDUINO) && ARDUINO >= 100
     #include "Arduino.h"
   #else
@@ -15,26 +13,21 @@
 
 #include "sketch.h"
 
-void disableReceive();
-void enableReceive();
-
 bool GetBitStream(unsigned int timings[] ,bool bitmessage[], byte BitCount, unsigned int L_Zero, unsigned int R_Zero, unsigned int L_One, unsigned int R_One);
 String RawMessage(unsigned int timings[], byte BitCount, unsigned int L_Zero, unsigned int R_Zero, unsigned int L_One, unsigned int R_One);
 unsigned long hexToDec(String hexString);
 
-/*
- * PT2262 Stuff
- */
-#define RECEIVETOLERANCE       60
-static byte ITrepetition = 6;
-static byte ITreceivetolerance = 60;
-static unsigned int ITbaseduration = 350;
+bool receiveProtocolKW9010(unsigned int changeCount);
 
-bool receiveProtocolPT2262(unsigned int changeCount);
+bool receiveProtocolEuroChron(unsigned int changeCount);
 
-void sendPT2262(char* triStateMessage);
+bool receiveProtocolNC_WS(unsigned int changeCount);
 
-void PT2262_transmit(int nHighPulses, int nLowPulses);
+bool receiveProtocolLIFETEC(unsigned int changeCount);
 
-void PT2262_CMDs(String cmd);
+bool receiveProtocolTX70DTH(unsigned int changeCount);
+
+bool receiveProtocolAURIOL(unsigned int changeCount);
+
+String hex2bin(String hexaDecimal);
 

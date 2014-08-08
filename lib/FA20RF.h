@@ -2,7 +2,7 @@
 /* Smoke dector FA20RF
 -----------------------------------------------------------------------------------------------*/
 
-//#define DEBUG           // Compile FA20RF witdh Debug informations
+//#define DEBUG           // Compile with Debug informations
 
 #ifndef _FA20RF_h
   #define _FA20RF_h
@@ -13,13 +13,7 @@
   #endif
 #endif
 
-#if defined(__AVR_ATmega32U4__)          //  
-#define PIN_SEND               10        // on some 32U Devices, there is no PIN 11, so we use 10 here. 
-#else 
-#define PIN_SEND               11 
-#endif 
-
-#define PIN_LED                13
+#include "sketch.h"
 
 void disableReceive();
 void enableReceive();
