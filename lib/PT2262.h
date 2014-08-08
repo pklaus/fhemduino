@@ -17,7 +17,9 @@
 #define PIN_SEND               10        // on some 32U Devices, there is no PIN 11, so we use 10 here. 
 #else 
 #define PIN_SEND               11 
-#endif 
+#endif
+
+#define PIN_LED                13
 
 void disableReceive();
 void enableReceive();
@@ -39,4 +41,6 @@ bool receiveProtocolPT2262(unsigned int changeCount);
 void sendPT2262(char* triStateMessage);
 
 void PT2262_transmit(int nHighPulses, int nLowPulses);
+
+void PT2262_CMDs(String cmd);
 

@@ -150,3 +150,29 @@ void sendFA20RF(char* StateMessage) {
   }
 }
 
+void FA20RF_CMDs(String cmd) {
+  // Set FA20RF Repetition
+  if (cmd.startsWith("fr"))
+  {
+    char msg[3];
+    cmd.substring(3).toCharArray(msg,3);
+    FArepetition = atoi(msg);
+    Serial.println(cmd);
+  }  
+  // Switch FA20RF Devices
+  else if (cmd.startsWith("fs"))
+  {
+    digitalWrite(PIN_LED,HIGH);
+    char msg[30];
+    cmd.substring(2).toCharArray(msg,30);
+    sendFA20RF(msg);
+    digitalWrite(PIN_LED,LOW);
+    Serial.println(msg);
+  }
+  else if (cmd.startsWith("fp")) {
+    String cPrint = "FAParams: ";
+    cPrint += " ";
+    cPrint += String(FArepetition);
+    Serial.println(cPrint);  
+  }
+}

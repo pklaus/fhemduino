@@ -87,3 +87,47 @@ void PT2262_transmit(int nHighPulses, int nLowPulses) {
   enableReceive();
 }
 
+void PT2262_CMDs(String cmd) {
+
+  // Set Intertechno receive tolerance
+  if (cmd.startsWith("it")) {
+    char msg[3];
+    cmd.substring(2).toCharArray(msg,3);
+    ITreceivetolerance = atoi(msg);
+    Serial.println(cmd);
+  }  
+  // Set Intertechno Repetition
+  else if (cmd.startsWith("ir")) {
+    char msg[3];
+    cmd.substring(2).toCharArray(msg,3);
+    ITrepetition = atoi(msg);
+    Serial.println(cmd);
+  }
+  // Switch Intertechno Devices
+  else if (cmd.startsWith("is")) {
+    digitalWrite(PIN_LED,HIGH);
+    char msg[13];
+    cmd.substring(2).toCharArray(msg,13);
+    if (cmd.length() > 14)
+    {
+       ITbaseduration=cmd.substring(14).toInt(); // Default Baseduration
+    }
+    else
+    {
+       ITbaseduration=350; // Default Baseduration
+    }
+    sendPT2262(msg);
+    digitalWrite(PIN_LED,LOW);
+    Serial.println(cmd);
+  }
+  // Get Intertechno Parameters
+  else if (cmd.startsWith("ip")) {
+    String cPrint = "ITParams: ";
+    cPrint += String(ITreceivetolerance);
+    cPrint += " ";
+    cPrint += String(ITrepetition);
+    cPrint += " ";
+    cPrint += String(ITbaseduration);
+    Serial.println(cPrint);
+  }
+}

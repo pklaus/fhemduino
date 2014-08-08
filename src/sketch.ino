@@ -971,93 +971,25 @@ void HandleCommand(String cmd)
   }
 #ifdef COMP_FA20RF
   // Set FA20RF Repetition
-  else if (cmd.startsWith("sdr"))
+  else if (cmd.startsWith("f"))
   {
-    char msg[3];
-    cmd.substring(3).toCharArray(msg,3);
-    FArepetition = atoi(msg);
-    Serial.println(cmd);
-  }  
-  // Switch FA20RF Devices
-  else if (cmd.startsWith("sd"))
-  {
-    digitalWrite(PIN_LED,HIGH);
-    char msg[30];
-    cmd.substring(2).toCharArray(msg,30);
-    sendFA20RF(msg);
-    digitalWrite(PIN_LED,LOW);
-    Serial.println(msg);
+     FA20RF_CMDs(cmd);
   }
 #endif
 #ifdef COMP_PT2262
-  // Set Intertechno Repetition
-  else if (cmd.startsWith("ir"))
-  {
-    char msg[3];
-    cmd.substring(2).toCharArray(msg,3);
-    ITrepetition = atoi(msg);
-    Serial.println(cmd);
-  }  
-  // Switch Intertechno Devices
-  else if (cmd.startsWith("is"))
-  {
-    digitalWrite(PIN_LED,HIGH);
-    char msg[13];
-    cmd.substring(2).toCharArray(msg,13);
-    if (cmd.length() > 14)
-    {
-       ITbaseduration=cmd.substring(14).toInt(); // Default Baseduration
-    }
-    else
-    {
-       ITbaseduration=350; // Default Baseduration
-    }
-    sendPT2262(msg);
-    digitalWrite(PIN_LED,LOW);
-    Serial.println(cmd);
+  // Intertechno commands
+  else if (cmd.startsWith("i")) {
+    PT2262_CMDs(cmd);
   }
 #endif
 #ifdef COMP_DOORBELL
-  // Set Tchibo Repetition
-  else if (cmd.startsWith("tcr"))
-  {
-    char msg[3];
-    cmd.substring(3).toCharArray(msg,3);
-    TCMrepetition = atoi(msg);
-    Serial.println(cmd);
-  }  
-  // Switch Intertechno Devices
-  else if (cmd.startsWith("tc"))
-  {
-    // tc11011100111011100001#
-    digitalWrite(PIN_LED,HIGH);
-    char msg[21];
-    cmd.substring(2).toCharArray(msg,21);
-    // sendTCM(msg);
-    sendStd(msg, TCMrepetition, 548, 1404, 508, 760, 1160, 47612);
-    digitalWrite(PIN_LED,LOW);
-    Serial.println(cmd);
+  // Tchibo TCM commands
+  else if (cmd.startsWith("d")) {
+    TCM_CMDs(cmd);
   }
-
-  // Set Heidemann Repetition
-  else if (cmd.startsWith("hxr"))
-  {
-    char msg[3];
-    cmd.substring(3).toCharArray(msg,3);
-    HXrepetition = atoi(msg);
-    Serial.println(cmd);
-  }  
-  // Switch Intertechno Devices
-  else if (cmd.startsWith("hx"))
-  {
-    // hx110111110001#
-    digitalWrite(PIN_LED,HIGH);
-    char msg[15];
-    cmd.substring(2).toCharArray(msg,15);
-    // sendHX(msg);
-    sendStd(msg, HXrepetition, 270, 300, 600, 720, 260, 5000);
-    digitalWrite(PIN_LED,LOW);
-    Serial.println(cmd);
+  // Heidemann commands
+  else if (cmd.startsWith("h")) {
+    HeideTX_CMDs(cmd);
   }
 #endif
   else if (cmd.equals("t")) {
@@ -1071,7 +1003,7 @@ void HandleCommand(String cmd)
   // Print Available Commands
   else if (cmd.equals("?"))
   {
-    Serial.println(F("? Use one of V is ir sd sdr tx txr hx hxr t R q"));
+    Serial.println(F("? Use one of V i f d h t R q"));
   }
   cmdstring = "";
 }
@@ -1244,3 +1176,4 @@ String hex2bin(String hexaDecimal)
   }
   return bitstream;
 }
+

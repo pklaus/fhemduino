@@ -19,6 +19,8 @@
 #define PIN_SEND               11 
 #endif 
 
+#define PIN_LED                13
+
 void disableReceive();
 void enableReceive();
 
@@ -29,7 +31,7 @@ unsigned long hexToDec(String hexString);
 /*
  * FA20RF Receiver
  */
-static unsigned int FArepetition = 10;
+static byte FArepetition = 10;
 
 void FA20RF(unsigned int duration);
 /*
@@ -38,4 +40,7 @@ void FA20RF(unsigned int duration);
 void receiveProtocolFA20RF(unsigned int changeCount);
 
 void sendFA20RF(char* StateMessage);
+
+void FA20RF_CMDs(String cmd);
+
 

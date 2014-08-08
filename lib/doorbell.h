@@ -19,6 +19,8 @@
 #define PIN_SEND               11 
 #endif 
 
+#define PIN_LED                13
+
 /*-----------------------------------------------------------------------------------------------
 /* Devices with sending / receiving functionality
 -----------------------------------------------------------------------------------------------*/
@@ -34,19 +36,26 @@ unsigned long hexToDec(String hexString);
  * Message: 100100111100 11100001
  *          Address      ?
  */
-static  unsigned int TCMrepetition = 19;
+static byte TCMrepetition = 19;
 
 bool receiveProtocolTCM(unsigned int changeCount);
+
+void TCM_CMDs(String cmd);
 
 /*
  * Heidemann HX Pocket (70283)
  * May work also with other Heidemann HX series door bells
  */
-
 static  unsigned int HXrepetition = 19;
 
 bool receiveProtocolHX(unsigned int changeCount);
 
+void HeideTX_CMDs(String cmd);
+
+/*
+ * Transmission functions
+ * 
+ */
 
 void sendStd(char* StateMessage, byte Repetition, int Intro, int Nlow, int Nhigh, int Hlow, int Hhigh, unsigned long Footer);
 
