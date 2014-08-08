@@ -39,10 +39,11 @@
 // 2014-07-31 - Fixed bug in KW9010 / crcValid not needed any more
 // 2014-08-05 - Added temperature sensor AURIOL (Lidl Version: 09/2013)
 // 2014-08-06 - Implemented uptime
+// 2014-08-08 - Started outsourcing of devices in modules
 
 // --- Configuration ---------------------------------------------------------
 #define PROGNAME               "FHEMduino"
-#define PROGVERS               "2.2c"
+#define PROGVERS               "2.2d"
 
 #if defined(__AVR_ATmega32U4__)          //on the leonardo and other ATmega32U4 devices interrupt 0 is on dpin 3
 #define PIN_RECEIVE            3
@@ -52,12 +53,6 @@
 
 #define PIN_LED                13
 
-#if defined(__AVR_ATmega32U4__)          //  
-#define PIN_SEND               10        // on some 32U Devices, there is no PIN 11, so we use 10 here. 
-#else 
-#define PIN_SEND               11 
-#endif 
-
 //#define DEBUG           // Compile sketch witdh Debug informations
 #ifdef DEBUG
 #define BAUDRATE               115200
@@ -65,9 +60,14 @@
 #define BAUDRATE               9600
 #endif
 
-// #define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
+#define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
+
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
+
+#define COMP_DOORBELL   // Compile sketch with door bell support: Tchibo / Heidemann HX Pocket (70283)
+
 #define COMP_FA20RF     // Compile sketch with smoke detector Flamingo FA20RF / ELRO RM150RF
+
 #define COMP_KW9010     // Compile sketch with KW9010 support
 #define COMP_NC_WS      // Compile sketch with PEARL NC7159, LogiLink WS0002 support
 #define COMP_EUROCHRON  // Compile sketch with EUROCHRON / Tchibo support
@@ -75,8 +75,7 @@
 #define COMP_TX70DTH    // Compile sketch with TX70DTH (Aldi) support
 #define COMP_AURIOL     // Compile sketch with AURIOL (Lidl Version: 09/2013); only temperature
 #define COMP_IT_TX      // Compile sketch with Intertechno TX2/3/4 support
-#define COMP_TCM        // Compile sketch with Tchibo door bell support
-#define COMP_HX         // Compile sketch with Heidemann HX Pocket (70283) door bell support
+#define USE_IT_TX       // Use 14_CUL_TX.pm Module which is already included in fhem. If not defined, the 14_fhemduino_Env module will be used.
 
 #define COMP_OSV2       // Compile sketch with OSV2 Support
 //#define COMP_Cresta     // Compile sketch with Cresta Support (currently not implemented, just for future use)
@@ -98,7 +97,32 @@
  *
 */
 
+/*-----------------------------------------------------------------------------------------------
+/* Devices with sending / receiving functionality => PT2262
+-----------------------------------------------------------------------------------------------*/
+#ifdef COMP_PT2262
+  #include "PT2262.h"
+#endif
+
+/*-----------------------------------------------------------------------------------------------
+/* door bell support: Tchibo / Heidemann HX Pocket (70283)
+-----------------------------------------------------------------------------------------------*/
+#ifdef COMP_DOORBELL
+  #include "doorbell.h"
+#endif
+
+/*-----------------------------------------------------------------------------------------------
+/* Smoke dector FA20RF
+-----------------------------------------------------------------------------------------------*/
+#ifdef COMP_FA20RF
+  #include "FA20RF.h"
+#endif
+
+/*-----------------------------------------------------------------------------------------------
+/* include oregon class
+-----------------------------------------------------------------------------------------------*/
 #include "decoders.h";
+
 #ifdef COMP_OSV2     // Compile sketch with OSV3 Support (currently not implemented, just for future use)
 OregonDecoderV2 orscV2;
 #endif
@@ -119,56 +143,28 @@ HezDecoder hez;
 XrfDecoder xrf;
 #endif
 
-/*
- * PT2262
- */
-#ifdef COMP_PT2262
-static unsigned int ITrepetition = 3;
-#endif
-
-/*
- * FA20RF
- */
-#ifdef COMP_FA20RF
-static  unsigned int FArepetition = 10;
-#endif
-
-/*
- * TCM234759
- */
-#ifdef COMP_TCM
-static  unsigned int TCMrepetition = 19;
-#endif
-
-/*
- * Heidemann HX Pocket (70283)
- */
-#ifdef COMP_HX
-static  unsigned int HXrepetition = 19;
-#endif
-
-/*
- * Weather sensors
- */
-#define MAX_CHANGES            90
-unsigned int timings[MAX_CHANGES];
-unsigned int timings2500[MAX_CHANGES];
-
+/*-----------------------------------------------------------------------------------------------
+/* Globals for message handling
+-----------------------------------------------------------------------------------------------*/
 String cmdstring;
 volatile bool available = false;
 String message = "";
 
+/*-----------------------------------------------------------------------------------------------
+/* Globals for bitstream handling
+-----------------------------------------------------------------------------------------------*/
+#define MAX_CHANGES            90
+unsigned int timings[MAX_CHANGES];
+unsigned int timings2500[MAX_CHANGES];
+
+/*-----------------------------------------------------------------------------------------------
+/* DCF77 stuff
+-----------------------------------------------------------------------------------------------*/
 /*
  * DCF77_SerialTimeOutput
  * Ralf Bohnen, 2013
  * This example code is in the public domain.
  */
- 
-/*
- * BOF preprocessor bug prevent
- * insert me on top of your arduino-code
- */
-
 #ifdef COMP_DCF77
 #include "Time.h"        // Unterstuetzung für Datum/Zeit-Funktionen
 #include "DCF77.h"
@@ -200,6 +196,9 @@ char* sprintDate() {
 }
 #endif
 
+/*-----------------------------------------------------------------------------------------------
+/* Initializing aof Arduino
+-----------------------------------------------------------------------------------------------*/
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(BAUDRATE);
@@ -232,6 +231,9 @@ void setup() {
 
 }
 
+/*-----------------------------------------------------------------------------------------------
+/* Main loop
+-----------------------------------------------------------------------------------------------*/
 void loop() {
 
   // put your main code here, to run repeatedly: 
@@ -262,9 +264,9 @@ void loop() {
 #endif
 }
 
-/*
- * Interrupt System
- */
+/*-----------------------------------------------------------------------------------------------
+/* Interrupt system
+-----------------------------------------------------------------------------------------------*/
 
 void enableReceive() {
   attachInterrupt(0,handleInterrupt,CHANGE);
@@ -391,9 +393,9 @@ void COMP_Cresta_HANDLER (unsigned int duration) {
 }
 #endif
 
-/*
- * call decoders when valid timings sequence available
- */
+/*-----------------------------------------------------------------------------------------------
+/* Generation bitstreams with sync bits greater than 5000 us
+-----------------------------------------------------------------------------------------------*/
 void decoders(unsigned int duration) {
 #define STARTBIT_TIME   5000
 #define STARTBIT_OFFSET 200
@@ -434,12 +436,10 @@ void decoders(unsigned int duration) {
         rc = receiveProtocolLIFETEC(changeCount);
       }
 #endif
-#ifdef COMP_TCM
+#ifdef COMP_DOORBELL
       if (rc == false) {
         rc = receiveProtocolTCM(changeCount);
       }
-#endif
-#ifdef COMP_HX
       if (rc == false) {
         rc = receiveProtocolHX(changeCount);
       }
@@ -467,9 +467,9 @@ void decoders(unsigned int duration) {
   timings[changeCount++] = duration;
 }
 
-/*
- * call decoders when valid timings sequence available
- */
+/*-----------------------------------------------------------------------------------------------
+/* Generation bitstreams with sync bits greater than 2500 us and less than 5000 us
+-----------------------------------------------------------------------------------------------*/
 void decoders2500(unsigned int duration) {
 #define LOW_STARTBIT_TIME  2500
 #define HIGH_STARTBIT_TIME 2500
@@ -504,198 +504,6 @@ void decoders2500(unsigned int duration) {
     repeatCount = 0;
   }
   timings2500[changeCount++] = duration;
-}
-
-/*
- * Serial Command Handling
- */
-void serialEvent()
-{
-  while (Serial.available())
-  {
-    char inChar = (char)Serial.read();
-    switch(inChar)
-    {
-    case '\n':
-    case '\r':
-    case '\0':
-    case '#':
-      HandleCommand(cmdstring);
-      break;
-    default:
-      cmdstring = cmdstring + inChar;
-    }
-  }
-}
-
-void HandleCommand(String cmd)
-{
-  // Version Information
-  if (cmd.equals("V"))
-  {
-    Serial.println(F("V " PROGVERS " FHEMduino - compiled at " __DATE__ " " __TIME__));
-  }
-  // Print free Memory
-  else if (cmd.equals("R")) {
-    Serial.print(F("R"));
-    Serial.println(freeRam());
-  }
-#ifdef COMP_FA20RF
-  // Set FA20RF Repetition
-  else if (cmd.startsWith("sdr"))
-  {
-    char msg[3];
-    cmd.substring(3).toCharArray(msg,3);
-    FArepetition = atoi(msg);
-    Serial.println(cmd);
-  }  
-  // Switch FA20RF Devices
-  else if (cmd.startsWith("sd"))
-  {
-    digitalWrite(PIN_LED,HIGH);
-    char msg[30];
-    cmd.substring(2).toCharArray(msg,30);
-    sendFA20RF(msg);
-    digitalWrite(PIN_LED,LOW);
-    Serial.println(msg);
-  }
-#endif
-#ifdef COMP_PT2262
-  // Set Intertechno Repetition
-  else if (cmd.startsWith("isr"))
-  {
-    char msg[3];
-    cmd.substring(3).toCharArray(msg,3);
-    ITrepetition = atoi(msg);
-    Serial.println(cmd);
-  }  
-  // Switch Intertechno Devices
-  else if (cmd.startsWith("is"))
-  {
-    digitalWrite(PIN_LED,HIGH);
-    char msg[13];
-    cmd.substring(2).toCharArray(msg,13);
-    unsigned int basedur;
-     Serial.println();
-     Serial.println(msg);
-    if (cmd.length() > 14)
-    {
-     basedur=cmd.substring(14).toInt(); // Default Baseduration
-     Serial.println(basedur);
-    }
-    else
-    {
-       basedur=350; // Default Baseduration
-    }
-    sendPT2262(msg,basedur);
-    digitalWrite(PIN_LED,LOW);
-    Serial.println(cmd);
-  }
-#endif
-#ifdef COMP_TCM
-  // Set Intertechno Repetition
-  else if (cmd.startsWith("tcr"))
-  {
-    char msg[3];
-    cmd.substring(3).toCharArray(msg,3);
-    TCMrepetition = atoi(msg);
-    Serial.println(cmd);
-  }  
-  // Switch Intertechno Devices
-  else if (cmd.startsWith("tc"))
-  {
-    // tc11011100111011100001#
-    digitalWrite(PIN_LED,HIGH);
-    char msg[21];
-    cmd.substring(2).toCharArray(msg,21);
-    // sendTCM(msg);
-    sendStd(msg, TCMrepetition, 548, 1404, 508, 760, 1160, 47612);
-    digitalWrite(PIN_LED,LOW);
-    Serial.println(cmd);
-  }
-#endif
-#ifdef COMP_HX
-  // Set Intertechno Repetition
-  else if (cmd.startsWith("hxr"))
-  {
-    char msg[3];
-    cmd.substring(3).toCharArray(msg,3);
-    HXrepetition = atoi(msg);
-    Serial.println(cmd);
-  }  
-  // Switch Intertechno Devices
-  else if (cmd.startsWith("hx"))
-  {
-    // hx110111110001#
-    digitalWrite(PIN_LED,HIGH);
-    char msg[15];
-    cmd.substring(2).toCharArray(msg,15);
-    // sendHX(msg);
-    sendStd(msg, HXrepetition, 270, 300, 600, 720, 260, 5000);
-    digitalWrite(PIN_LED,LOW);
-    Serial.println(cmd);
-  }
-#endif
-  else if (cmd.equals("t")) {
-    uptime(millis(), true);
-  }
-    else if (cmd.equals("XQ")) {
-    disableReceive();
-    Serial.flush();
-    Serial.end();
-  }
-  // Print Available Commands
-  else if (cmd.equals("?"))
-  {
-    Serial.println(F("? Use one of V is isr sd sdr tx txr hx hxr t R q"));
-  }
-  cmdstring = "";
-}
-
-void uptime(unsigned long timepassed, bool Print)
-{
-  static unsigned long time_in_secs=0;
-  static unsigned long temps=0;
-  unsigned long secs=0;
-
-  secs = timepassed/1000;
-  
-  if (secs < temps) {
-     time_in_secs += secs;
-  } else {
-     time_in_secs = secs;
-  }
-
-  temps = timepassed/1000;
-  
-  if (Print) {
-    //Display results
-    String cPrint = "00000000";
-    cPrint += String(time_in_secs,HEX);
-    int StringStart = cPrint.length()-8;
-    cPrint = cPrint.substring(StringStart);
-    cPrint.toUpperCase();
-    Serial.println(cPrint);
-  }
-}
-
-// Get free RAM of UC
-int freeRam () {
-  extern int __heap_start, *__brkval; 
-  int v; 
-  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
-}
-
-/*
- * Message Handling
- */
-bool messageAvailable() {
-  return (available && (message.length() > 0));
-}
-
-void resetAvailable() {
-  available = false;
-  message = "";
 }
 
 /*-----------------------------------------------------------------------------------------------
@@ -747,7 +555,11 @@ void receiveProtocolIT_TX(unsigned int changeCount) {
   byte i;
   unsigned long code = 0;
 
+#ifdef USE_IT_TX
   message = "TX";
+#else
+  message = "W00";
+#endif
 
   for (i = 0; i <= 14; i = i + 2)
   {
@@ -762,14 +574,15 @@ void receiveProtocolIT_TX(unsigned int changeCount) {
       return;
     }
   }
-  message += String(code,HEX);
-  
+
   // Startsequence 0000 1010 = 0xA
   if (code != 10) {
     return;
   }
+
+  message += String(code,HEX);
   code = 0;
-  
+
   // Sensor type 0000 = Temp / 1110 = Humidity
   for (i = 16; i <= 22; i = i + 2)
   {
@@ -784,6 +597,7 @@ void receiveProtocolIT_TX(unsigned int changeCount) {
       return;
     }
   }
+
   message += String(code,HEX);
   code = 0;
 
@@ -855,9 +669,6 @@ void receiveProtocolIT_TX(unsigned int changeCount) {
   message += String(code,HEX);
   
   message.toUpperCase();
-
- // Serial.print("TX2_3: ");
- // Serial.println(i);
 
   available = true;
   return;
@@ -1125,354 +936,193 @@ bool receiveProtocolAURIOL(unsigned int changeCount) {
 #endif
 
 /*-----------------------------------------------------------------------------------------------
-/* Devices with sending / receiving functionality
+/* Serial Command Handling
 -----------------------------------------------------------------------------------------------*/
-
-#ifdef COMP_PT2262
-/*
- * PT2262 Stuff
- */
-#define RECEIVETOLERANCE       60
-
-bool receiveProtocolPT2262(unsigned int changeCount) {
-
-  message = "IR";
-  if (changeCount != 49) {
-    return false;
-  }
-  unsigned long code = 0;
-  unsigned long delay = timings[0] / 31;
-  unsigned long delayTolerance = delay * RECEIVETOLERANCE * 0.01; 
-
-  for (int i = 1; i < changeCount; i=i+2) {
-    if (timings[i] > delay-delayTolerance && timings[i] < delay+delayTolerance && timings[i+1] > delay*3-delayTolerance && timings[i+1] < delay*3+delayTolerance) {
-      code = code << 1;
-    }
-    else if (timings[i] > delay*3-delayTolerance && timings[i] < delay*3+delayTolerance && timings[i+1] > delay-delayTolerance && timings[i+1] < delay+delayTolerance)  { 
-      code += 1;
-      code = code << 1;
-    }
-    else {
-      code = 0;
-      return false;
-    }
-  }
-  code = code >> 1;
-
-#ifdef DEBUG
-  Serial.print(changeCount);
-  Serial.print(" ");
-  Serial.println(code,BIN);
-#endif
-  message += code;
-  available = true;
-  return true;
-}
-
-void sendPT2262(char* triStateMessage,unsigned int BaseDur) {
-  //unsigned int BaseDur = 350; // Um ggf. die Basiszeit einstellen zu können
-  for (int i = 0; i < ITrepetition; i++) {
-    unsigned int pos = 0;
-    PT2262_transmit(1,31,BaseDur);
-    while (triStateMessage[pos] != '\0') {
-      switch(triStateMessage[pos]) {
-      case '0':
-        PT2262_transmit(1,3,BaseDur);
-        PT2262_transmit(1,3,BaseDur);
-        break;
-      case 'F':
-        PT2262_transmit(1,3,BaseDur);
-        PT2262_transmit(3,1,BaseDur);
-        break;
-      case '1':
-        PT2262_transmit(3,1,BaseDur);
-        PT2262_transmit(3,1,BaseDur);
-        break;
-      }
-      pos++;
-    }
-  }
-}
-
-void PT2262_transmit(int nHighPulses, int nLowPulses, unsigned int BaseDur) {
-  disableReceive();
-  digitalWrite(PIN_SEND, HIGH);
-  delayMicroseconds(BaseDur * nHighPulses);
-  digitalWrite(PIN_SEND, LOW);
-  delayMicroseconds(BaseDur * nLowPulses);
-  enableReceive();
-}
-#endif
-
-#ifdef COMP_FA20RF
-/*
- * FA20RF Receiver
- */
-#define FA20_MAX_CHANGES 60
-unsigned int timingsFA20[FA20_MAX_CHANGES];      //  FA20RF
-
-void FA20RF(unsigned int duration) {
-#define L_STARTBIT_TIME         8020
-#define H_STARTBIT_TIME         8120
-#define L_STOPBIT_TIME          10000
-#define H_STOPBIT_TIME          20000 // Stop bit is something geater 10.000 us, may be not graeter then 20.000.
-
-  static unsigned int changeCount;
-
-  if (duration > L_STARTBIT_TIME && duration < H_STARTBIT_TIME) {
-    changeCount = 0;
-    timingsFA20[0] = duration;
-  } 
-  else if ((duration > L_STOPBIT_TIME && duration < H_STOPBIT_TIME) && ( timingsFA20[0] > L_STARTBIT_TIME && timingsFA20[0] < H_STARTBIT_TIME)) {
-    timingsFA20[changeCount] = duration;
-    receiveProtocolFA20RF(changeCount);
-    changeCount = 0;
-  }
-
-  if (changeCount >= FA20_MAX_CHANGES) {
-    changeCount = 0;
-  }
-  timingsFA20[changeCount++] = duration;
-}
-
-/*
- * FA20RF Decoder
- */
-void receiveProtocolFA20RF(unsigned int changeCount) {
-#define FA20RF_SYNC   8060
-#define FA20RF_SYNC2  960
-#define FA20RF_ONE    2740
-#define FA20RF_ZERO   1450
-#define FA20RF_GLITCH  70
-#define FA20RF_MESSAGELENGTH 24
-
-  if (changeCount < (FA20RF_MESSAGELENGTH * 2)) {
-    return;
-  }
-  
-  if ((timingsFA20[0] < FA20RF_SYNC - FA20RF_GLITCH) || (timingsFA20[0] > FA20RF_SYNC + FA20RF_GLITCH)) {
-    return;
-  }
-
-  if ((timingsFA20[1] < FA20RF_SYNC2 - FA20RF_GLITCH) || (timingsFA20[1] > FA20RF_SYNC2 + FA20RF_GLITCH)) {
-    return;
-  }
-
-  byte i;
-  unsigned long code = 0;
-
-  for (i = 1; i < (FA20RF_MESSAGELENGTH * 2); i = i + 2)
+void serialEvent()
+{
+  while (Serial.available())
   {
-    if ((timingsFA20[i + 2] > FA20RF_ZERO - FA20RF_GLITCH) && (timingsFA20[i + 2] < FA20RF_ZERO + FA20RF_GLITCH))    {
-      code <<= 1;
-    }
-    else if ((timingsFA20[i + 2] > FA20RF_ONE - FA20RF_GLITCH) && (timingsFA20[i + 2] < FA20RF_ONE + FA20RF_GLITCH)) {
-      code <<= 1;
-      code |= 1;
-    }
-    else {
-#ifdef DEBUG
-      Serial.print("timingsFA20[");
-      Serial.print(i + 2);
-      Serial.print("]: ");
-      Serial.println(timingsFA20[i + 2]);
-      Serial.print("timingsFA20[51]: ");
-      Serial.println(timingsFA20[51]);
-#endif
-      return;
+    char inChar = (char)Serial.read();
+    switch(inChar)
+    {
+    case '\n':
+    case '\r':
+    case '\0':
+    case '#':
+      HandleCommand(cmdstring);
+      break;
+    default:
+      cmdstring = cmdstring + inChar;
     }
   }
-
-#ifdef DEBUG
-  Serial.println(code,BIN);
-#endif
-
-  char tmp[5];
-  message = "F";
-  message += String(code,HEX);
-
-  sprintf(tmp, "%05u", timingsFA20[i+2]);
-  message += "-";
-  message += tmp;
-
-  available = true;
-  return;
 }
 
-void sendFA20RF(char* StateMessage) {
-  unsigned int pos = 0;
+void HandleCommand(String cmd)
+{
+  // Version Information
+  if (cmd.equals("V"))
+  {
+    Serial.println(F("V " PROGVERS " FHEMduino - compiled at " __DATE__ " " __TIME__));
+  }
+  // Print free Memory
+  else if (cmd.equals("R")) {
+    Serial.print(F("R"));
+    Serial.println(freeRam());
+  }
+#ifdef COMP_FA20RF
+  // Set FA20RF Repetition
+  else if (cmd.startsWith("sdr"))
+  {
+    char msg[3];
+    cmd.substring(3).toCharArray(msg,3);
+    FArepetition = atoi(msg);
+    Serial.println(cmd);
+  }  
+  // Switch FA20RF Devices
+  else if (cmd.startsWith("sd"))
+  {
+    digitalWrite(PIN_LED,HIGH);
+    char msg[30];
+    cmd.substring(2).toCharArray(msg,30);
+    sendFA20RF(msg);
+    digitalWrite(PIN_LED,LOW);
+    Serial.println(msg);
+  }
+#endif
+#ifdef COMP_PT2262
+  // Set Intertechno Repetition
+  else if (cmd.startsWith("ir"))
+  {
+    char msg[3];
+    cmd.substring(2).toCharArray(msg,3);
+    ITrepetition = atoi(msg);
+    Serial.println(cmd);
+  }  
+  // Switch Intertechno Devices
+  else if (cmd.startsWith("is"))
+  {
+    digitalWrite(PIN_LED,HIGH);
+    char msg[13];
+    cmd.substring(2).toCharArray(msg,13);
+    if (cmd.length() > 14)
+    {
+       ITbaseduration=cmd.substring(14).toInt(); // Default Baseduration
+    }
+    else
+    {
+       ITbaseduration=350; // Default Baseduration
+    }
+    sendPT2262(msg);
+    digitalWrite(PIN_LED,LOW);
+    Serial.println(cmd);
+  }
+#endif
+#ifdef COMP_DOORBELL
+  // Set Tchibo Repetition
+  else if (cmd.startsWith("tcr"))
+  {
+    char msg[3];
+    cmd.substring(3).toCharArray(msg,3);
+    TCMrepetition = atoi(msg);
+    Serial.println(cmd);
+  }  
+  // Switch Intertechno Devices
+  else if (cmd.startsWith("tc"))
+  {
+    // tc11011100111011100001#
+    digitalWrite(PIN_LED,HIGH);
+    char msg[21];
+    cmd.substring(2).toCharArray(msg,21);
+    // sendTCM(msg);
+    sendStd(msg, TCMrepetition, 548, 1404, 508, 760, 1160, 47612);
+    digitalWrite(PIN_LED,LOW);
+    Serial.println(cmd);
+  }
 
-  for (int i = 0; i < FArepetition; i++) {
-    delay(1);
-    pos = 0;
+  // Set Heidemann Repetition
+  else if (cmd.startsWith("hxr"))
+  {
+    char msg[3];
+    cmd.substring(3).toCharArray(msg,3);
+    HXrepetition = atoi(msg);
+    Serial.println(cmd);
+  }  
+  // Switch Intertechno Devices
+  else if (cmd.startsWith("hx"))
+  {
+    // hx110111110001#
+    digitalWrite(PIN_LED,HIGH);
+    char msg[15];
+    cmd.substring(2).toCharArray(msg,15);
+    // sendHX(msg);
+    sendStd(msg, HXrepetition, 270, 300, 600, 720, 260, 5000);
+    digitalWrite(PIN_LED,LOW);
+    Serial.println(cmd);
+  }
+#endif
+  else if (cmd.equals("t")) {
+    uptime(millis(), true);
+  }
+    else if (cmd.equals("XQ")) {
     disableReceive();
-    digitalWrite(PIN_SEND, HIGH);
-    delayMicroseconds(8040);
-    digitalWrite(PIN_SEND, LOW);
-    delayMicroseconds(920);
-    enableReceive();
-    while (StateMessage[pos] != '\0') {
-      switch(StateMessage[pos]) {
-      case '0':
-        disableReceive();
-        digitalWrite(PIN_SEND, HIGH);
-        delayMicroseconds(740);
-        digitalWrite(PIN_SEND, LOW);
-        delayMicroseconds(1440);
-        enableReceive();
-        break;
-      case '1':
-        disableReceive();
-        digitalWrite(PIN_SEND, HIGH);
-        delayMicroseconds(740);
-        digitalWrite(PIN_SEND, LOW);
-        delayMicroseconds(2740);
-        enableReceive();
-        break;
-      }
-      pos++;
-    }
-    disableReceive();
-    digitalWrite(PIN_SEND, HIGH);
-    delayMicroseconds(750);
-    digitalWrite(PIN_SEND, LOW);
-    delayMicroseconds(12000);
-    digitalWrite(PIN_SEND, HIGH);
-    delayMicroseconds(35);
-    digitalWrite(PIN_SEND, LOW);
-    enableReceive();
+    Serial.flush();
+    Serial.end();
   }
+  // Print Available Commands
+  else if (cmd.equals("?"))
+  {
+    Serial.println(F("? Use one of V is ir sd sdr tx txr hx hxr t R q"));
+  }
+  cmdstring = "";
 }
-#endif
 
-#ifdef COMP_TCM
-/*
- * TCM234759 Stuff
- * Message: 100100111100 11100001
- *          Address      ?
- */
-bool receiveProtocolTCM(unsigned int changeCount) {
-#define TCM_SYNC          47670
-#define TCM_ONE           750
-#define TCM_ZERO          1400
-#define TCM_GLITCH        100
+/*-----------------------------------------------------------------------------------------------
+/* Helper functions
+-----------------------------------------------------------------------------------------------*/
+void uptime(unsigned long timepassed, bool Print)
+{
+  static unsigned long time_in_secs=0;
+  static unsigned long temps=0;
+  unsigned long secs=0;
 
-#define TCM_MESSAGELENGTH 20
-
-  if (changeCount < TCM_MESSAGELENGTH * 2) {
-    return false;
-  }
-  if ((timings[0] < TCM_SYNC - TCM_GLITCH) || (timings[0] > TCM_SYNC + TCM_GLITCH)) {
-    return false;
-  }
-
-#ifdef DEBUG
-  bool bitmessage[TCM_MESSAGELENGTH];
-  if (GetBitStream(timings, bitmessage, TCM_MESSAGELENGTH * 2, TCM_ZERO - TCM_GLITCH, TCM_ZERO + TCM_GLITCH, TCM_ONE - TCM_GLITCH, TCM_ONE + TCM_GLITCH) == false) {
-      return false;
-  }
-#endif
-
-  String rawcode;
-  rawcode = RawMessage(timings, TCM_MESSAGELENGTH, TCM_ZERO - TCM_GLITCH, TCM_ZERO + TCM_GLITCH, TCM_ONE - TCM_GLITCH, TCM_ONE + TCM_GLITCH);
-  if (rawcode == "") {
-      return false;
-  }
-
-  message = "M";
-  message += rawcode;
-  available = true;
-  return true;
-
-}
-#endif
-
-/*
- * Heidemann HX Pocket (70283)
- * May work also with other Heidemann HX series door bells
- */
-#ifdef COMP_HX
-bool receiveProtocolHX(unsigned int changeCount) {
-#define HX_SYNC   5030
-#define HX_ONE    710
-#define HX_ZERO   350
-#define HX_GLITCH  40
-
-#define HX_MESSAGELENGTH 12
-
-  if (changeCount != 25) {
-    return false;
-  }
-  if ((timings[0] < HX_SYNC - HX_GLITCH) || (timings[0] > HX_SYNC + HX_GLITCH)) {
-    return false;
-  }
-
-  bool bitmessage[HX_MESSAGELENGTH];
+  secs = timepassed/1000;
   
-#ifdef DEBUG
-  if (GetBitStream(timings, bitmessage, HX_MESSAGELENGTH * 2, HX_ZERO - HX_GLITCH, HX_ZERO + HX_GLITCH, HX_ONE - HX_GLITCH, HX_ONE + HX_GLITCH) == false) {
-      return false;
-  }
-#endif
-
-  String rawcode;
-  rawcode = RawMessage(timings, HX_MESSAGELENGTH, HX_ZERO - HX_GLITCH, HX_ZERO + HX_GLITCH, HX_ONE - HX_GLITCH, HX_ONE + HX_GLITCH);
-  if (rawcode == "") {
-      return false;
-  }
-
-  message = "H";
-  message += rawcode;
-  available = true;
-  return true;
-}
-#endif
-
-void sendStd(char* StateMessage, byte Repetition, int Intro, int Nlow, int Nhigh, int Hlow, int Hhigh, unsigned long Footer) {
-  unsigned int pos = 0;
-  unsigned int milli = 0;
-  unsigned int micro = 0;
-  
-  if (Footer > 16000) {
-    milli = Footer / 1000;
-    micro = Footer - (milli * 1000);
+  if (secs < temps) {
+     time_in_secs += secs;
   } else {
-    micro = Footer;
+     time_in_secs = secs;
   }
+
+  temps = timepassed/1000;
   
-  for (int i = 0; i < Repetition; i++) {
-    pos = 0;
-    disableReceive();
-    digitalWrite(PIN_SEND, HIGH);
-    delayMicroseconds(Intro); // 270
-    enableReceive();
-    while (StateMessage[pos] != '\0') {
-      switch(StateMessage[pos]) {
-      case '0':
-        disableReceive();
-        digitalWrite(PIN_SEND, LOW);
-        delayMicroseconds(Nlow); //300
-        digitalWrite(PIN_SEND, HIGH);
-        delayMicroseconds(Nhigh); // 600
-        enableReceive();
-        break;
-      case '1':
-        disableReceive();
-        digitalWrite(PIN_SEND, LOW);
-        delayMicroseconds(Hlow); // 720
-        digitalWrite(PIN_SEND, HIGH);
-        delayMicroseconds(Hhigh); // 260
-        enableReceive();
-        break;
-      }
-      pos++;
-    }
-    disableReceive();
-    digitalWrite(PIN_SEND, LOW);
-    delayMicroseconds(micro);
-    delay(milli);
-    enableReceive();
+  if (Print) {
+    //Display results
+    String cPrint = "00000000";
+    cPrint += String(time_in_secs,HEX);
+    int StringStart = cPrint.length()-8;
+    cPrint = cPrint.substring(StringStart);
+    cPrint.toUpperCase();
+    Serial.println(cPrint);
   }
+}
+
+// Get free RAM of UC
+int freeRam () {
+  extern int __heap_start, *__brkval; 
+  int v; 
+  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
+}
+
+/*
+ * Message Handling
+ */
+bool messageAvailable() {
+  return (available && (message.length() > 0));
+}
+
+void resetAvailable() {
+  available = false;
+  message = "";
 }
 
 #ifdef DEBUG
