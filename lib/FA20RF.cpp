@@ -167,7 +167,7 @@ void FA20RF_CMDs(String cmd) {
     cmd.substring(2).toCharArray(msg,30);
     sendFA20RF(msg);
     digitalWrite(PIN_LED,LOW);
-    Serial.println(msg);
+    Serial.println(cmd);
   }
   else if (cmd.startsWith("fp")) {
     String cPrint = "FAParams: ";
