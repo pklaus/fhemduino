@@ -341,7 +341,7 @@ void COMP_Cresta_HANDLER (unsigned int duration) {
   if (cres.nextPulse(duration))
   {
     byte len;
-    const byte* data = orscV2.getData(len) + 5;
+    const byte* data = cres.getData(len) + 5;
     char tmp[36]="";
     uint8_t tmp_len = 0;
     strcat(tmp, "CRESTA:");
