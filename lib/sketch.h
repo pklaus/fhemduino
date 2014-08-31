@@ -35,7 +35,7 @@
 #define BAUDRATE               9600
 #endif
 
-#define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
+//#define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
 
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
 
@@ -47,7 +47,7 @@
 #define COMP_KW9010     // Compile sketch with KW9010 support
 #define COMP_NC_WS      // Compile sketch with PEARL NC7159, LogiLink WS0002 support
 #define COMP_EUROCHRON  // Compile sketch with EUROCHRON / Tchibo support
-#define COMP_LIFETEC    // Compile sketch with LIFETEC support
+//#define COMP_LIFETEC    // Compile sketch with LIFETEC support
 #define COMP_TX70DTH    // Compile sketch with TX70DTH (Aldi) support
 #define COMP_AURIOL     // Compile sketch with AURIOL (Lidl Version: 09/2013); only temperature
 
