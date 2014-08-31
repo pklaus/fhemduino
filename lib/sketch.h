@@ -39,7 +39,7 @@
 
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
 
-#define COMP_DOORBELL   // Compile sketch with door bell support: Tchibo / Heidemann HX Pocket (70283)
+// #define COMP_DOORBELL   // Compile sketch with door bell support: Tchibo / Heidemann HX Pocket (70283)
 
 #define COMP_FA20RF     // Compile sketch with smoke detector Flamingo FA20RF / ELRO RM150RF
 
