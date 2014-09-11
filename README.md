@@ -46,3 +46,8 @@ The following features can be enabled / disabled during compile time. Others may
 ```
 
 Do not disable #define COMP_OSV2 this will result in an error.
+
+
+Where to get help
+=========
+Just open an issue
