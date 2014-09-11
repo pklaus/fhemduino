@@ -5,7 +5,7 @@ fhemduino
 How to compile with Arduino IDE unter Microsoft Windows:
 
 
-1. Sync the repository from github or download the complete archive via zip
+1. Sync the repository from github or download the complete archive as a zip archive.
 2. Extract or copy all files from src and lib the files to a directory called fhemduino
 3. rename sketch.ino into fhemduino.ino. The name of the sketch must be the same as the directory where it resides.
 4. Look at the sketch.h file, to enable or disable features of the fhemduino.
