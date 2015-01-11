@@ -37,6 +37,8 @@
 
 //#define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
 
+#define COMP_BMP183      // Compile sketch with BMP183 SPI support (high-precision, ultra-low power barometric pressure and temperature sensor)
+
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
 
 // #define COMP_DOORBELL   // Compile sketch with door bell support: Tchibo / Heidemann HX Pocket (70283)

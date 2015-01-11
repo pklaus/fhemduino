@@ -125,6 +125,49 @@ XrfDecoder xrf;
 #endif
 
 /*-----------------------------------------------------------------------------------------------
+/* BMP183 SPI-based pressure and temperature sensor
+-----------------------------------------------------------------------------------------------*/
+#ifdef COMP_BMP183
+#include <SPI.h>
+#include "BMP183.h"
+
+// ID (shows up in FHEM):
+#define BMP183_ID 0x01
+
+// --- declare with hardware SPI
+#define BMP183_CS   9 // chip-select pin (in general any unused pin should work)
+BMP183 bmp183 = BMP183(BMP183_CS);
+// --- declare with software SPI / use any 4 pins
+//#define BMP183_CLK  13
+//#define BMP183_SDO  12  // AKA MISO
+//#define BMP183_SDI  11  // AKA MOSI
+//BMP183 bmp = BMP183(BMP183_CLK, BMP183_SDO, BMP183_SDI, BMP183_CS);
+// -- end declare
+
+char bmp183_msg[18];
+
+static unsigned long bmp183_last_time = 0;
+const unsigned long bmp183_interval = 30000;
+
+bool send_bmp183_message() {
+  // ID
+  byte id = BMP183_ID;
+
+  // Temperature
+  int temperature = (int) (bmp183.getTemperature() * 100 + .5);
+
+  // Pressure
+  uint32_t pressure = bmp183.getPressure();
+
+  // Output
+  sprintf(bmp183_msg,"P %02X %+05d %06lu", id, temperature, pressure);
+  message = bmp183_msg;
+  available = true;
+  return true;
+}
+#endif // BMP183
+
+/*-----------------------------------------------------------------------------------------------
 /* DCF77 stuff
 -----------------------------------------------------------------------------------------------*/
 /*
@@ -209,6 +252,14 @@ void setup() {
 
 #endif // COMP_DCF77
 
+
+#ifdef COMP_BMP183
+  if(!bmp183.begin())
+  {
+    Serial.print("Ooops, no BMP183 detected ... Check your wiring!");
+  }
+  bmp183_last_time -= bmp183_interval;
+#endif // COMP_BMP183
 }
 
 /*-----------------------------------------------------------------------------------------------
@@ -235,6 +286,13 @@ void loop() {
       Serial.println(sprintDate());   
     }
 #endif
+
+  if (millis() - bmp183_last_time >= bmp183_interval) {
+    bmp183_last_time = bmp183_last_time + bmp183_interval;
+    #ifdef COMP_BMP183
+    send_bmp183_message();
+    #endif // BMP183
+  }
 
 //serialEvent does not work on ATmega32U4 devices like the Leonardo, so we do the handling ourselves
 #if defined(__AVR_ATmega32U4__)
