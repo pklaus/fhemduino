@@ -14,7 +14,7 @@
   BSD license, all text above must be included in any redistribution
  ****************************************************/
 
-#include "Adafruit_BMP183.h"
+#include "BMP183.h"
 #ifdef __AVR__
     #include <util/delay.h>
 #endif
@@ -24,15 +24,15 @@
 #include <SPI.h>
 
 
-Adafruit_BMP183::Adafruit_BMP183(int8_t SPICS ) {
+BMP183::BMP183(int8_t SPICS ) {
   _cs = SPICS;
   _clk = _miso = _mosi = -1; 
 }
 
-Adafruit_BMP183::Adafruit_BMP183(int8_t SPICLK, 
-				 int8_t SPIMISO, 
-				 int8_t SPIMOSI, 
-				 int8_t SPICS) {
+BMP183::BMP183(int8_t SPICLK,
+         int8_t SPIMISO,
+         int8_t SPIMOSI,
+         int8_t SPICS) {
   _cs = SPICS;
   _clk = SPICLK;
   _miso = SPIMISO;
@@ -40,7 +40,7 @@ Adafruit_BMP183::Adafruit_BMP183(int8_t SPICLK,
 }
 
 
-boolean Adafruit_BMP183::begin(bmp183_mode_t mode) {
+boolean BMP183::begin(bmp183_mode_t mode) {
   if (_clk == -1) {
     SPI.begin();
     SPI.setDataMode(SPI_MODE0);
@@ -104,7 +104,7 @@ boolean Adafruit_BMP183::begin(bmp183_mode_t mode) {
 #endif
 }
 
-uint16_t Adafruit_BMP183::readRawTemperature(void) {
+uint16_t BMP183::readRawTemperature(void) {
   write8(BMP183_REGISTER_CONTROL, BMP183_REGISTER_READTEMPCMD);
   _delay_ms(5);
 #if BMP183_DEBUG == 1
@@ -113,7 +113,7 @@ uint16_t Adafruit_BMP183::readRawTemperature(void) {
   return read16(BMP183_REGISTER_TEMPDATA);
 }
 
-uint32_t Adafruit_BMP183::readRawPressure(void) {
+uint32_t BMP183::readRawPressure(void) {
   uint32_t raw;
 
   write8(BMP183_REGISTER_CONTROL, BMP183_REGISTER_READPRESSURECMD + (oversampling << 6));
@@ -148,7 +148,7 @@ uint32_t Adafruit_BMP183::readRawPressure(void) {
 }
 
 
-int32_t Adafruit_BMP183::getPressure(void) {
+int32_t BMP183::getPressure(void) {
   int32_t UT, UP, B3, B5, B6, X1, X2, X3, p;
   uint32_t B4, B7;
 
@@ -233,7 +233,7 @@ int32_t Adafruit_BMP183::getPressure(void) {
 }
 
 
-float Adafruit_BMP183::getTemperature(void) {
+float BMP183::getTemperature(void) {
   int32_t UT, X1, X2, B5;     // following ds convention
   float temp;
 
@@ -258,7 +258,7 @@ float Adafruit_BMP183::getTemperature(void) {
   return temp;
 }
 
-float Adafruit_BMP183::getAltitude(float sealevelPressure) {
+float BMP183::getAltitude(float sealevelPressure) {
   float altitude;
 
   float pressure = getPressure(); // in Si units for Pascal
@@ -269,7 +269,7 @@ float Adafruit_BMP183::getAltitude(float sealevelPressure) {
   return altitude;
 }
 
-float Adafruit_BMP183::getSealevelPressure(float altitude) {
+float BMP183::getSealevelPressure(float altitude) {
   float sealevelPressure;
 
   float pressure = getPressure();
@@ -282,7 +282,7 @@ float Adafruit_BMP183::getSealevelPressure(float altitude) {
 
 /*********************************************************************/
 
-uint8_t Adafruit_BMP183::SPIxfer(uint8_t x) {
+uint8_t BMP183::SPIxfer(uint8_t x) {
   if (_clk == -1) {
     return SPI.transfer(x);
   } else {
@@ -294,14 +294,14 @@ uint8_t Adafruit_BMP183::SPIxfer(uint8_t x) {
       digitalWrite(_mosi, x & (1<<i));
       digitalWrite(_clk, HIGH);
       if (digitalRead(_miso)) 
-	reply |= 1;
+        reply |= 1;
     }
     return reply;
   }
 }
 
 
-uint8_t Adafruit_BMP183::read8(uint8_t reg) {
+uint8_t BMP183::read8(uint8_t reg) {
   uint8_t value;
 
   digitalWrite(_cs, LOW);
@@ -312,7 +312,7 @@ uint8_t Adafruit_BMP183::read8(uint8_t reg) {
   return value;
 }
 
-uint16_t Adafruit_BMP183::read16(uint8_t reg) {
+uint16_t BMP183::read16(uint8_t reg) {
   uint16_t value;
 
   digitalWrite(_cs, LOW);
@@ -325,7 +325,7 @@ uint16_t Adafruit_BMP183::read16(uint8_t reg) {
   return value;
 }
 
-void Adafruit_BMP183::write8(uint8_t reg, uint8_t value) {
+void BMP183::write8(uint8_t reg, uint8_t value) {
   digitalWrite(_cs, LOW);
   SPIxfer(reg & 0x7F);
   SPIxfer(value);

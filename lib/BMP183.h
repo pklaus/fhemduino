@@ -66,10 +66,10 @@
     } bmp183_mode_t;
 /*=========================================================================*/
 
-class Adafruit_BMP183 {
+class BMP183 {
  public:
-  Adafruit_BMP183(int8_t SPICS);
-  Adafruit_BMP183(int8_t SPICLK, int8_t SPIMISO, int8_t SPIMOSI, int8_t SPICS);
+  BMP183(int8_t SPICS);
+  BMP183(int8_t SPICLK, int8_t SPIMISO, int8_t SPIMOSI, int8_t SPICS);
 
   boolean begin(bmp183_mode_t mode = BMP183_MODE_ULTRAHIGHRES);  // by default go highres
   float getTemperature(void);
