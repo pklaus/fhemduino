@@ -230,7 +230,6 @@ unsigned int timings2500[MAX_CHANGES];
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(BAUDRATE);
-  while (!Serial);
   enableReceive();
   pinMode(PIN_RECEIVE,INPUT);
   pinMode(PIN_SEND,OUTPUT);
