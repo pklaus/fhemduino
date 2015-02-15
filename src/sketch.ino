@@ -147,6 +147,7 @@ static unsigned long max31850_last_time = 0;
 const unsigned long max31850_interval = 10000;
 
 bool handle_max31850() {
+  disableReceive();
   if (sensors.isConversionAvailable(max31850_temp_device_address)) {
     float tempC = sensors.getTempC(max31850_temp_device_address);
     long int tempCint = (long int) (tempC * 100.0);
@@ -168,6 +169,7 @@ bool handle_max31850() {
       max31850_tries = 0;
     } else max31850_tries++;
   }
+  enableReceive();
 }
 
 #endif
@@ -230,7 +232,6 @@ unsigned int timings2500[MAX_CHANGES];
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(BAUDRATE);
-  enableReceive();
   pinMode(PIN_RECEIVE,INPUT);
   pinMode(PIN_SEND,OUTPUT);
 
@@ -269,6 +270,7 @@ void setup() {
   if (max31850_num_devices > 0) sensors.getAddress(max31850_temp_device_address, 0);
 #endif
 
+  enableReceive();
 }
 
 /*-----------------------------------------------------------------------------------------------
