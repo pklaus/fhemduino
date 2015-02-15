@@ -125,6 +125,54 @@ XrfDecoder xrf;
 #endif
 
 /*-----------------------------------------------------------------------------------------------
+/* MAX31850 1-Wire support
+-----------------------------------------------------------------------------------------------*/
+#ifdef COMP_MAX31850
+#include "OneWire.h"
+#include "DallasTemperature.h"
+
+#define ONE_WIRE_BUS 4 // Data pin of MAX31850 (use a level shifter to 3V3!)
+
+#define TEMPERATURE_PRECISION 9
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+int max31850_num_devices; // Number of temperature devices found
+int max31850_current_device = 0;
+int max31850_tries = 0;
+int max31850_max_tries = 10;
+DeviceAddress max31850_temp_device_address;
+char max31850_msg[64];
+
+static unsigned long max31850_last_time = 0;
+const unsigned long max31850_interval = 10000;
+
+bool handle_max31850() {
+  if (sensors.isConversionAvailable(max31850_temp_device_address)) {
+    float tempC = sensors.getTempC(max31850_temp_device_address);
+    long int tempCint = (long int) (tempC * 100.0);
+    // Output
+    sprintf(max31850_msg,"y %02x%02x%02x%02x%02x%02x%02x%02x %+07ld", max31850_temp_device_address[0], max31850_temp_device_address[1], max31850_temp_device_address[2], max31850_temp_device_address[3], max31850_temp_device_address[4], max31850_temp_device_address[5], max31850_temp_device_address[6], max31850_temp_device_address[7], tempCint);
+    message = max31850_msg;
+    available = true;
+    max31850_current_device++;
+    max31850_current_device %= max31850_num_devices;
+    sensors.getAddress(max31850_temp_device_address, max31850_current_device);
+    sensors.requestTemperatures();
+    return true;
+  } else {
+    sensors.requestTemperatures();
+    if (max31850_tries >= max31850_max_tries) {
+      max31850_current_device++;
+      max31850_current_device %= max31850_num_devices;
+      sensors.requestTemperatures();
+      max31850_tries = 0;
+    } else max31850_tries++;
+  }
+}
+
+#endif
+
+/*-----------------------------------------------------------------------------------------------
 /* DCF77 stuff
 -----------------------------------------------------------------------------------------------*/
 /*
@@ -182,6 +230,7 @@ unsigned int timings2500[MAX_CHANGES];
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(BAUDRATE);
+  while (!Serial);
   enableReceive();
   pinMode(PIN_RECEIVE,INPUT);
   pinMode(PIN_SEND,OUTPUT);
@@ -209,6 +258,18 @@ void setup() {
 
 #endif // COMP_DCF77
 
+#ifdef COMP_MAX31850
+  sensors.begin();
+  sensors.setWaitForConversion(false);
+  max31850_num_devices = sensors.getDeviceCount();
+  for(int i=0;i<max31850_num_devices; i++) {
+    if(sensors.getAddress(max31850_temp_device_address, i)) {
+      sensors.setResolution(max31850_temp_device_address, TEMPERATURE_PRECISION);
+    }
+  }
+  if (max31850_num_devices > 0) sensors.getAddress(max31850_temp_device_address, 0);
+#endif
+
 }
 
 /*-----------------------------------------------------------------------------------------------
@@ -234,6 +295,13 @@ void loop() {
       Serial.print("-"); 
       Serial.println(sprintDate());   
     }
+#endif
+
+#ifdef COMP_MAX31850
+  if (millis() - max31850_last_time >= max31850_interval) {
+    max31850_last_time = max31850_last_time + max31850_interval;
+    handle_max31850();
+  }
 #endif
 
 //serialEvent does not work on ATmega32U4 devices like the Leonardo, so we do the handling ourselves

@@ -37,6 +37,8 @@
 
 //#define COMP_DCF77      // Compile sketch with DCF-77 Support (currently disableling this is not working, has still to be done)
 
+#define COMP_MAX31850   // Compile sketch with MAX31850 support (thermocouple amplifier using 1-Wire, for k-type thermocouples)
+
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
 
 // #define COMP_DOORBELL   // Compile sketch with door bell support: Tchibo / Heidemann HX Pocket (70283)
