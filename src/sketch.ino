@@ -153,11 +153,12 @@ bool send_bmp183_message() {
   // ID
   byte id = BMP183_ID;
 
+  disableReceive();
   // Temperature
   int temperature = (int) (bmp183.getTemperature() * 100 + .5);
-
   // Pressure
   uint32_t pressure = bmp183.getPressure();
+  enableReceive();
 
   // Output
   sprintf(bmp183_msg,"P %02X %+05d %06lu", id, temperature, pressure);
@@ -225,7 +226,6 @@ unsigned int timings2500[MAX_CHANGES];
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(BAUDRATE);
-  enableReceive();
   pinMode(PIN_RECEIVE,INPUT);
   pinMode(PIN_SEND,OUTPUT);
 
@@ -260,6 +260,8 @@ void setup() {
   }
   bmp183_last_time -= bmp183_interval;
 #endif // COMP_BMP183
+
+  enableReceive();
 }
 
 /*-----------------------------------------------------------------------------------------------
