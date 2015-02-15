@@ -147,13 +147,23 @@ static unsigned long max31850_last_time = 0;
 const unsigned long max31850_interval = 10000;
 
 bool handle_max31850() {
+  disableReceive();
+  float tempC;
   if (sensors.isConversionAvailable(max31850_temp_device_address)) {
-    float tempC = sensors.getTempC(max31850_temp_device_address);
-    long int tempCint = (long int) (tempC * 100.0);
-    // Output
-    sprintf(max31850_msg,"y %02x%02x%02x%02x%02x%02x%02x%02x %+07ld", max31850_temp_device_address[0], max31850_temp_device_address[1], max31850_temp_device_address[2], max31850_temp_device_address[3], max31850_temp_device_address[4], max31850_temp_device_address[5], max31850_temp_device_address[6], max31850_temp_device_address[7], tempCint);
-    message = max31850_msg;
-    available = true;
+    while (max31850_tries < max31850_max_tries) {
+      max31850_tries++;
+      tempC = sensors.getTempC(max31850_temp_device_address);
+      if (tempC < -270.0 || tempC > 1768.0 || tempC == NAN) continue;
+      else break;
+    }
+    if (tempC >= -270.0 || tempC <= 1768.0 || tempC != NAN) {
+      long int tempCint = (long int) (tempC * 100.0);
+      // Output
+      sprintf(max31850_msg,"y %02x%02x%02x%02x%02x%02x%02x%02x %+07ld", max31850_temp_device_address[0], max31850_temp_device_address[1], max31850_temp_device_address[2], max31850_temp_device_address[3], max31850_temp_device_address[4], max31850_temp_device_address[5], max31850_temp_device_address[6], max31850_temp_device_address[7], tempCint);
+      message = max31850_msg;
+      available = true;
+    } // else: we failed to read this sensor but move on nevertheless
+    max31850_tries = 0;
     max31850_current_device++;
     max31850_current_device %= max31850_num_devices;
     sensors.getAddress(max31850_temp_device_address, max31850_current_device);
@@ -168,6 +178,7 @@ bool handle_max31850() {
       max31850_tries = 0;
     } else max31850_tries++;
   }
+  enableReceive();
 }
 
 #endif
