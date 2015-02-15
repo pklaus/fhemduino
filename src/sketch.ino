@@ -156,13 +156,18 @@ bool handle_max31850() {
       if (tempC < -270.0 || tempC > 1768.0 || tempC == NAN) continue;
       else break;
     }
+    long int tempCint;
     if (tempC >= -270.0 || tempC <= 1768.0 || tempC != NAN) {
-      long int tempCint = (long int) (tempC * 100.0);
-      // Output
-      sprintf(max31850_msg,"y %02x%02x%02x%02x%02x%02x%02x%02x %+07ld", max31850_temp_device_address[0], max31850_temp_device_address[1], max31850_temp_device_address[2], max31850_temp_device_address[3], max31850_temp_device_address[4], max31850_temp_device_address[5], max31850_temp_device_address[6], max31850_temp_device_address[7], tempCint);
-      message = max31850_msg;
-      available = true;
-    } // else: we failed to read this sensor but move on nevertheless
+      tempCint = (long int) (tempC * 100.0);
+    } else {
+      // we failed to read this sensor ->  let's send an error message
+      tempCint = (long int) 999999;
+    }
+    // Output
+    sprintf(max31850_msg,"y %02x%02x%02x%02x%02x%02x%02x%02x %+07ld", max31850_temp_device_address[0], max31850_temp_device_address[1], max31850_temp_device_address[2], max31850_temp_device_address[3], max31850_temp_device_address[4], max31850_temp_device_address[5], max31850_temp_device_address[6], max31850_temp_device_address[7], tempCint);
+    message = max31850_msg;
+    available = true;
+    // Move on to next sensor
     max31850_tries = 0;
     max31850_current_device++;
     max31850_current_device %= max31850_num_devices;
