@@ -287,12 +287,12 @@ void loop() {
     }
 #endif
 
+#ifdef COMP_BMP183
   if (millis() - bmp183_last_time >= bmp183_interval) {
     bmp183_last_time = bmp183_last_time + bmp183_interval;
-    #ifdef COMP_BMP183
     send_bmp183_message();
-    #endif // BMP183
   }
+#endif // BMP183
 
 //serialEvent does not work on ATmega32U4 devices like the Leonardo, so we do the handling ourselves
 #if defined(__AVR_ATmega32U4__)
