@@ -39,6 +39,8 @@
 
 #define COMP_MAX31850   // Compile sketch with MAX31850 support (thermocouple amplifier using 1-Wire, for k-type thermocouples)
 
+#define COMP_BMP183      // Compile sketch with BMP183 SPI support (high-precision, ultra-low power barometric pressure and temperature sensor)
+
 #define COMP_PT2262     // Compile sketch with PT2262 (IT / ELRO switches)
 
 // #define COMP_DOORBELL   // Compile sketch with door bell support: Tchibo / Heidemann HX Pocket (70283)
