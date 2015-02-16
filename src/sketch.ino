@@ -144,7 +144,7 @@ DeviceAddress max31850_temp_device_address;
 char max31850_msg[64];
 
 static unsigned long max31850_last_time = 0;
-const unsigned long max31850_interval = 10000;
+const unsigned long max31850_interval = 2000;
 
 bool handle_max31850() {
   disableReceive();
