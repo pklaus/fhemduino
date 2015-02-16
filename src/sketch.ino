@@ -144,7 +144,7 @@ DeviceAddress max31850_temp_device_address;
 char max31850_msg[64];
 
 static unsigned long max31850_last_time = 0;
-const unsigned long max31850_interval = 10000;
+const unsigned long max31850_interval = 2000;
 
 bool handle_max31850() {
   disableReceive();
@@ -153,11 +153,11 @@ bool handle_max31850() {
     while (max31850_tries < max31850_max_tries) {
       max31850_tries++;
       tempC = sensors.getTempC(max31850_temp_device_address);
-      if (tempC < -270.0 || tempC > 1768.0 || tempC == NAN) continue;
+      if (tempC < -270.0 || tempC > 1768.0 || tempC != tempC) continue;
       else break;
     }
     long int tempCint;
-    if (tempC >= -270.0 || tempC <= 1768.0 || tempC != NAN) {
+    if (tempC >= -270.0 && tempC <= 1768.0 && tempC == tempC) {
       tempCint = (long int) (tempC * 100.0);
     } else {
       // we failed to read this sensor ->  let's send an error message
