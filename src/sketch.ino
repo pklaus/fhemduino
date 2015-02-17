@@ -162,7 +162,7 @@ bool handle_max31850() {
       rawTemp = +99999;
     // Output
     // to print a int16_t value, check PRId16 from <inttypes.h>
-    sprintf(max31850_msg,"y %02x%02x%02x%02x%02x%02x%02x%02x %+05d", max31850_temp_device_address[0], max31850_temp_device_address[1], max31850_temp_device_address[2], max31850_temp_device_address[3], max31850_temp_device_address[4], max31850_temp_device_address[5], max31850_temp_device_address[6], max31850_temp_device_address[7], rawTemp);
+    sprintf(max31850_msg,"y %02x%02x%02x%02x%02x%02x%02x%02x %+05d %1d", max31850_temp_device_address[0], max31850_temp_device_address[1], max31850_temp_device_address[2], max31850_temp_device_address[3], max31850_temp_device_address[4], max31850_temp_device_address[5], max31850_temp_device_address[6], max31850_temp_device_address[7], rawTemp>>2, rawTemp&0x1);
     message = max31850_msg;
     available = true;
     // Move on to next sensor
