@@ -148,23 +148,21 @@ const unsigned long max31850_interval = 2000;
 
 bool handle_max31850() {
   disableReceive();
-  float tempC;
+  int16_t rawTemp;
   if (sensors.isConversionAvailable(max31850_temp_device_address)) {
     while (max31850_tries < max31850_max_tries) {
       max31850_tries++;
-      tempC = sensors.getTempC(max31850_temp_device_address);
-      if (tempC < -270.0 || tempC > 1768.0 || tempC != tempC) continue;
+      rawTemp = sensors.getRawTemp(max31850_temp_device_address);
+      if (rawTemp < -270*16 || rawTemp > 1768*16) continue;
       else break;
     }
     long int tempCint;
-    if (tempC >= -270.0 && tempC <= 1768.0 && tempC == tempC) {
-      tempCint = (long int) (tempC * 100.0);
-    } else {
+    if (rawTemp < -270*16 || rawTemp > 1768*16)
       // we failed to read this sensor ->  let's send an error message
-      tempCint = (long int) 999999;
-    }
+      rawTemp = +99999;
     // Output
-    sprintf(max31850_msg,"y %02x%02x%02x%02x%02x%02x%02x%02x %+07ld", max31850_temp_device_address[0], max31850_temp_device_address[1], max31850_temp_device_address[2], max31850_temp_device_address[3], max31850_temp_device_address[4], max31850_temp_device_address[5], max31850_temp_device_address[6], max31850_temp_device_address[7], tempCint);
+    // to print a int16_t value, check PRId16 from <inttypes.h>
+    sprintf(max31850_msg,"y %02x%02x%02x%02x%02x%02x%02x%02x %+05d", max31850_temp_device_address[0], max31850_temp_device_address[1], max31850_temp_device_address[2], max31850_temp_device_address[3], max31850_temp_device_address[4], max31850_temp_device_address[5], max31850_temp_device_address[6], max31850_temp_device_address[7], rawTemp);
     message = max31850_msg;
     available = true;
     // Move on to next sensor
