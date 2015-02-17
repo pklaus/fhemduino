@@ -414,6 +414,12 @@ float DallasTemperature::getTempFByIndex(uint8_t deviceIndex)
   return toFahrenheit(getTempCByIndex(deviceIndex));
 }
 
+// reads scratchpad and returns the temperature in degrees C * 16
+int16_t DallasTemperature::calculateRawTemperature(uint8_t* deviceAddress, uint8_t* scratchPad)
+{
+  return (((int16_t)scratchPad[TEMP_MSB]) << 8) | scratchPad[TEMP_LSB];
+}
+
 // reads scratchpad and returns the temperature in degrees C
 float DallasTemperature::calculateTemperature(uint8_t* deviceAddress, uint8_t* scratchPad)
 {
@@ -481,6 +487,15 @@ float DallasTemperature::getTempC(uint8_t* deviceAddress)
 
   ScratchPad scratchPad;
   if (isConnected(deviceAddress, scratchPad)) return calculateTemperature(deviceAddress, scratchPad);
+  return DEVICE_DISCONNECTED;
+}
+
+// returns temperature in degrees C * 16 or DEVICE_DISCONNECTED if the
+// device's scratch pad cannot be read successfully.
+int16_t DallasTemperature::getRawTemp(uint8_t* deviceAddress)
+{
+  ScratchPad scratchPad;
+  if (isConnected(deviceAddress, scratchPad)) return calculateRawTemperature(deviceAddress, scratchPad);
   return DEVICE_DISCONNECTED;
 }
 

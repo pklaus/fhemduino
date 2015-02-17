@@ -127,6 +127,9 @@ class DallasTemperature
   // returns temperature in degrees C
   float getTempC(uint8_t*);
 
+  // returns temperature in degrees C * 16
+  int16_t getRawTemp(uint8_t*);
+
   // returns temperature in degrees F
   float getTempF(uint8_t*);
 
@@ -225,6 +228,9 @@ class DallasTemperature
   // reads scratchpad and returns the temperature in degrees C
   float calculateTemperature(uint8_t*, uint8_t*);
   
+  // reads scratchpad and returns the temperature in degrees C * 16
+  int16_t calculateRawTemperature(uint8_t*, uint8_t*);
+
   void	blockTillConversionComplete(uint8_t*,uint8_t*);
   
   #if REQUIRESALARMS
